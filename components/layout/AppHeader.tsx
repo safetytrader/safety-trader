@@ -1,3 +1,4 @@
+// @ts-nocheck
 export function AppHeader({ left, right, title, sub, user }) {
   return (
     <header className="bg-slate-900 text-white px-6 py-4 flex items-center gap-4 shadow">

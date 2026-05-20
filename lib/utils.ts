@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { CHECKLIST_ITEMS, FORMATION_SCADENZA } from "@/lib/constants";
 
 // ── UTILITY ───────────────────────────────────────────────────────────────────

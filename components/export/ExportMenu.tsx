@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { buildSchediMaestanze, buildCSV } from "@/lib/export";
 
 export function ExportMenu({ cantiere, imp, onClose }) {

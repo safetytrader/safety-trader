@@ -28,7 +28,10 @@ export default function LoginPage() {
       await signIn(email, password);
       router.push("/");
     } catch (err) {
-      showMsg(err?.message || "Accesso non riuscito.", "error");
+      const message =
+        err instanceof Error ? err.message : "Accesso non riuscito.";
+    
+      showMsg(message, "error");
     } finally {
       setLoading(false);
     }
@@ -50,7 +53,10 @@ export default function LoginPage() {
         showMsg("Registrazione completata. Ora puoi accedere.", "success");
       }
     } catch (err) {
-      showMsg(err?.message || "Registrazione non riuscita.", "error");
+      const message =
+        err instanceof Error ? err.message : "Registrazione non riuscita.";
+    
+      showMsg(message, "error");
     } finally {
       setLoading(false);
     }

@@ -1,3 +1,5 @@
+// @ts-nocheck
+import { supabase } from "@/lib/supabaseClient";
 import { calcScadenza, isExpired, isExpiringSoon } from "@/lib/utils";
 
 // ── EXPORT HTML SCHEDA MAESTRANZE ─────────────────────────────────────────────

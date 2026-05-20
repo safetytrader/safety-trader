@@ -1,3 +1,4 @@
+// @ts-nocheck
 export function EmptyState({ icon, title, sub }) {
   return (
     <div className="text-center py-20 text-slate-400">

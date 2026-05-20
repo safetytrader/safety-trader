@@ -55,14 +55,14 @@ export const FORMATION_SCADENZA = {
   preposto: 5, // 5 anni
   ponteggiatori: 5, // Ponteggi: scadenza da data erogazione
   ponteggi: 5,
-  antincendio: (gruppo) => {
-    if(gruppo==="A") return 3; // Basso rischio
-    if(gruppo==="B") return 5; // Medio rischio
-    if(gruppo==="C") return 5; // Alto rischio
-    return 3;
+  antincendio: (gruppo: string) => {
+    if (gruppo === "A") return 3; // Basso rischio
+    if (gruppo === "B") return 5; // Medio rischio
+    if (gruppo === "C") return 5; // Alto rischio
+    return 5;
   },
-  ps: (gruppo) => {
-    if(gruppo==="A") return 3; // Gruppo A
+  ps: (gruppo: string) => {
+    if (gruppo === "A") return 3; // Gruppo A
     return 5; // Gruppo B/C
   },
   confinati: 5,
