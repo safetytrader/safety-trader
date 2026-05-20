@@ -1,0 +1,695 @@
+// @ts-nocheck
+"use client";
+
+import { useState, useRef, useCallback, useEffect } from "react";
+
+// ── COSTANTI ──────────────────────────────────────────────────────────────────
+const CHECKLIST_ITEMS = [
+  { id:"a1", lettera:"a", label:"Dati identificativi impresa (ragione sociale, DL, sede, tel)", required:true },
+  { id:"a2", lettera:"a", label:"Attività e lavorazioni svolte in cantiere (incl. subappalti)", required:true },
+  { id:"a3", lettera:"a", label:"Nominativi addetti PS, antincendio, RLS/RLST", required:true },
+  { id:"a4", lettera:"a", label:"Nominativo medico competente (ove previsto)", required:false },
+  { id:"a5", lettera:"a", label:"Nominativo RSPP", required:true },
+  { id:"a6", lettera:"a", label:"Nominativo DTC e capocantiere/preposto", required:true },
+  { id:"a7", lettera:"a", label:"Elenco lavoratori con qualifiche (dipendenti e autonomi)", required:true },
+  { id:"b1", lettera:"b", label:"Mansioni sicurezza di ogni figura nominata", required:true },
+  { id:"c1", lettera:"c", label:"Descrizione attività, modalità organizzative e turni", required:true },
+  { id:"d1", lettera:"d", label:"Elenco ponteggi, trabattelli, opere provvisionali", required:false },
+  { id:"d2", lettera:"d", label:"Elenco macchine e impianti", required:true },
+  { id:"e1", lettera:"e", label:"Elenco sostanze pericolose e schede di sicurezza", required:false },
+  { id:"f1", lettera:"f", label:"Valutazione del rumore", required:true },
+  { id:"f2", lettera:"f", label:"Valutazione delle vibrazioni", required:true },
+  { id:"g1", lettera:"g", label:"Misure preventive/protettive integrative al PSC", required:true },
+  { id:"g2", lettera:"g", label:"Pi.M.U.S. (se presenti ponteggi)", required:false },
+  { id:"h1", lettera:"h", label:"Procedure complementari richieste dal PSC", required:false },
+  { id:"i1", lettera:"i", label:"Elenco DPI forniti ai lavoratori", required:true },
+  { id:"l1", lettera:"l", label:"Formazione di base (tutti i lavoratori)", required:true },
+  { id:"l2", lettera:"l", label:"Formazione dirigenti e preposti", required:true },
+  { id:"l3", lettera:"l", label:"Formazione/addestramento rischi specifici e DPI 3ª cat.", required:true },
+  { id:"l4", lettera:"l", label:"Attestati primo soccorso e antincendio", required:true },
+];
+
+const ALLEGATI_CONFIG = [
+  { key:"C.I. legale rappresentante", sinonimi:"carta identità, documento identità, CI, passaporto" },
+  { key:"D.U.R.C.", sinonimi:"DURC, documento unico regolarità contributiva", scadenza:true, scadenzaNote:"Validità 120 giorni dalla data di emissione" },
+  { key:"Visura Camerale (CC.I.AA.)", sinonimi:"visura camerale, visura CCIAA, camera di commercio", scadenza:true, scadenzaNote:"Deve essere emessa entro 6 mesi dalla data di verifica" },
+  { key:"D.V.R. (integrale)", sinonimi:"DVR, documento valutazione rischi" },
+  { key:"Dichiarazione art. 14 D.Lgs. 81/08", sinonimi:"dichiarazione art 14, dichiarazione assenza provvedimenti sospensione" },
+  { key:"D.O.M.A.", sinonimi:"DOMA, dichiarazione organico medio annuo, organico aziendale" },
+  { key:"Nomina medico competente", sinonimi:"nomina medico, medico competente, MC" },
+  { key:"Nomina RSPP e formazione", sinonimi:"RSPP, responsabile servizio prevenzione protezione" },
+  { key:"Nomina addetti Antincendio", sinonimi:"addetti antincendio, nomina antincendio, addetti emergenza" },
+  { key:"Nomina addetti Primo Soccorso", sinonimi:"addetti primo soccorso, nomina primo soccorso" },
+  { key:"Elenco attrezzature e conformità", sinonimi:"elenco attrezzature, dichiarazioni conformità CE, marcatura CE" },
+  { key:"Idoneità sanitaria personale", sinonimi:"idoneità sanitaria, visita medica, certificato idoneità" },
+  { key:"Verbali consegna DPI", sinonimi:"DPI, consegna DPI, verbale consegna dispositivi protezione" },
+  { key:"UNILAV", sinonimi:"UNILAV, comunicazione assunzione, contratto lavoro" },
+  { key:"Nomina RLS e formazione", sinonimi:"RLS, rappresentante lavoratori sicurezza, RLST" },
+];
+
+const ALLEGATI = ALLEGATI_CONFIG.map(a=>a.key);
+const BATCH_SIZE = 8;
+const STATUS_COLORS = { idoneo:"bg-emerald-500", parziale:"bg-amber-400", "non idoneo":"bg-red-500", "da verificare":"bg-slate-400" };
+const BADGE = { idoneo:"bg-emerald-100 text-emerald-700 border border-emerald-300", parziale:"bg-amber-100 text-amber-700 border border-amber-300", "non idoneo":"bg-red-100 text-red-700 border border-red-300", "da verificare":"bg-slate-100 text-slate-500 border border-slate-300" };
+
+// ── REGOLE FORMAZIONE STATO-REGIONI (21/12/2011) ──────────────────────────────────
+const FORMATION_SCADENZA = {
+  formazioneBase: null, // Non scade mai
+  formazioneSpec: 5, // 5 anni
+  aggiornamento: 5, // 5 anni
+  preposto: 5, // 5 anni
+  ponteggiatori: null, // Non scade
+  antincendio: (gruppo) => {
+    if(gruppo==="A") return 3; // Basso rischio
+    if(gruppo==="B") return 5; // Medio rischio
+    if(gruppo==="C") return 5; // Alto rischio
+    return 3;
+  },
+  ps: (gruppo) => {
+    if(gruppo==="A") return 3; // Gruppo A
+    return 5; // Gruppo B/C
+  },
+  confinati: 5,
+  mdt: 5,
+  ple: 5,
+  gruista: 5,
+};
+
+const FORMATION_RULES = `ACCORDO STATO-REGIONI 21/12/2011:
+- Formazione BASE: NON HA SCADENZA
+- Formazione SPECIFICA: aggiornamento ogni 5 anni
+- Preposto: 8h, aggiornamento ogni 5 anni
+- Primo soccorso: Gruppo A ogni 3 anni, B/C ogni 5 anni
+- Antincendio: basso ogni 5 anni, medio ogni 3, alto ogni 2
+- Idoneità sanitaria: scadenza da medico competente`;
+
+const ALLEGATI_PROMPT = ALLEGATI_CONFIG.map(a=>`"${a.key}" (anche: ${a.sinonimi})`).join("\n");
+const DOC_RULES = `RICONOSCIMENTO DOCUMENTI:
+- Pi.M.U.S. / piano montaggio ponteggi → g2=si
+- DVR / valutazione rischi → documenta g1
+- D.O.M.A. = dichiarazione organico medio annuo (NON registro macchine)
+- Dichiarazione art.14 = assenza provvedimenti sospensione
+- Attestati/certificati formazione → campi maestranza`;
+
+// ── UTILITY ───────────────────────────────────────────────────────────────────
+function calcStatus(checks) {
+  const req = CHECKLIST_ITEMS.filter(i=>i.required);
+  const done = req.filter(i=>checks[i.id]==="si").length;
+  if (done===req.length) return "idoneo";
+  if (done===0) return "da verificare";
+  if (done>=req.length*0.7) return "parziale";
+  return "non idoneo";
+}
+
+// Normalizzazione nome per deduplicazione
+function normalizeName(name) {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z\s]/g, "")
+    .trim()
+    .split(/\s+/)
+    .sort()
+    .join(" ");
+}
+
+// Calcola similarità tra due nomi (Jaccard similarity)
+function nameSimilarity(name1, name2) {
+  const n1 = normalizeName(name1);
+  const n2 = normalizeName(name2);
+  if (n1 === n2) return 1;
+  
+  const set1 = new Set(n1.split(" "));
+  const set2 = new Set(n2.split(" "));
+  const intersection = [...set1].filter(x => set2.has(x)).length;
+  const union = new Set([...set1, ...set2]).size;
+  
+  return union === 0 ? 0 : intersection / union;
+}
+
+// Merge dettagliato di due maestranze con deduplicazione intelligente
+function mergeWorker(existing, incoming) {
+  const merged = { ...existing };
+  
+  for (const [key, value] of Object.entries(incoming)) {
+    if (key === "nome") continue; // Usa nome existente
+    if (value && value !== "—" && !merged[key]) {
+      merged[key] = value;
+    }
+    // Se incoming ha un valore migliore, sostituisci
+    if (value && value !== "—" && !merged[key]) {
+      merged[key] = value;
+    }
+  }
+  
+  return merged;
+}
+
+// Deduplicazione intelligente con threshold 0.75
+function deduplicateWorkers(existing = [], incoming = []) {
+  const result = [...existing];
+  
+  for (const incomingWorker of incoming) {
+    const similarIdx = result.findIndex(
+      existing => nameSimilarity(existing.nome, incomingWorker.nome) >= 0.75
+    );
+    
+    if (similarIdx >= 0) {
+      result[similarIdx] = mergeWorker(result[similarIdx], incomingWorker);
+    } else {
+      result.push(incomingWorker);
+    }
+  }
+  
+  return result;
+}
+
+// Calcola data di scadenza dalla data di conseguimento
+function calcScadenza(dataConseguimento, tipoCorso) {
+  if (!dataConseguimento || dataConseguimento === "—" || dataConseguimento === "✓") return "✓";
+  
+  const parts = dataConseguimento.split("/");
+  if (parts.length !== 3) return dataConseguimento;
+  
+  const [day, month, year] = parts;
+  const fullYear = year.length === 2 ? `20${year}` : year;
+  const date = new Date(fullYear, parseInt(month) - 1, parseInt(day));
+  
+  if (isNaN(date.getTime())) return dataConseguimento;
+  
+  let yearsToAdd = FORMATION_SCADENZA[tipoCorso];
+  
+  // Se è una funzione (es. antincendio, primo soccorso), calcola in base al gruppo
+  if (typeof yearsToAdd === "function") {
+    yearsToAdd = yearsToAdd("A"); // Default gruppo A
+  }
+  
+  if (!yearsToAdd) return "✓"; // Non scade
+  
+  const scadenza = new Date(date);
+  scadenza.setFullYear(scadenza.getFullYear() + yearsToAdd);
+  
+  const d = String(scadenza.getDate()).padStart(2, "0");
+  const m = String(scadenza.getMonth() + 1).padStart(2, "0");
+  const y = String(scadenza.getFullYear()).slice(-2);
+  
+  return `${d}/${m}/${y}`;
+}
+
+// Parse data
+function parseDate(ds) {
+  if (!ds || ds === "✓") return null;
+  const p = ds.split("/");
+  if (p.length !== 3) return null;
+  return new Date(`${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}-${p[0]}`);
+}
+
+function isExpired(ds) {
+  const d = parseDate(ds);
+  return d ? d < new Date() : false;
+}
+
+function isExpiringSoon(ds) {
+  const d = parseDate(ds);
+  if (!d) return false;
+  const diff = (d - new Date()) / 86400000;
+  return diff >= 0 && diff < 60;
+}
+
+// Merge checks
+const mergeChecks = (a = {}, b = {}) => {
+  const out = {};
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    out[k] = a[k] === "si" || b[k] === "si" ? "si" : a[k] === "na" || b[k] === "na" ? "na" : a[k] === "no" || b[k] === "no" ? "no" : undefined;
+    if (!out[k]) delete out[k];
+  }
+  return out;
+};
+
+const mergeAllegati = (a = {}, b = {}) => {
+  const out = { ...a };
+  for (const k of Object.keys(b)) if (b[k]) out[k] = true;
+  return out;
+};
+
+const mkImpresa = () => ({
+  id: Date.now(),
+  nome: "",
+  attivita: "",
+  checks: {},
+  allegati: {},
+  allegatiScadenze: {},
+  note: "",
+  maestranze: [],
+  analyzing: false,
+  analyzed: false,
+  aiSummary: "",
+  uploadedFiles: [],
+  extracting: false,
+  extractLog: [],
+  corsiSpeciali: { confinati: false, mdt: false, ple: false, gruista: false }
+});
+
+// ── EXPORT HTML SCHEDA MAESTRANZE ─────────────────────────────────────────────
+function buildSchediMaestanze(cantiere, imp) {
+  const oggi = new Date().toLocaleDateString("it-IT");
+  const mae = imp.maestranze
+    .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
+    .map(m => {
+      const fSpecScad = m.formazioneSpec ? calcScadenza(m.formazioneSpec, "formazioneSpec") : "—";
+      const aggScad = m.aggiornamento ? calcScadenza(m.aggiornamento, "aggiornamento") : "—";
+      const prepostoScad = m.preposto ? calcScadenza(m.preposto, "preposto") : "—";
+      const idoScad = m.idoneita ? m.idoneita : "—";
+      
+      return `<tr>
+        <td style="padding:6px 8px;font-size:10px;font-weight:600">${m.nome}</td>
+        <td style="padding:6px 8px;font-size:10px">${m.qualifica || "—"}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center">${idoScad}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center">${m.formazioneBase ? "✓" : "—"}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center;${isExpired(fSpecScad) ? "color:#991b1b;font-weight:600" : isExpiringSoon(fSpecScad) ? "color:#92400e;font-weight:600" : "color:#065f46;font-weight:600"}">${fSpecScad}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center;${isExpired(aggScad) ? "color:#991b1b;font-weight:600" : isExpiringSoon(aggScad) ? "color:#92400e;font-weight:600" : "color:#065f46;font-weight:600"}">${aggScad}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center;${isExpired(prepostoScad) ? "color:#991b1b;font-weight:600" : isExpiringSoon(prepostoScad) ? "color:#92400e;font-weight:600" : "color:#065f46;font-weight:600"}">${prepostoScad}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center">${m.ponteggiatori ? (m.ponteggiatori === "✓" ? "✓" : m.ponteggiatori) : "—"}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center">${m.antincendio || "—"}</td>
+        <td style="padding:6px 8px;font-size:10px;text-align:center">${m.ps || "—"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Scheda Maestranze — ${imp.nome}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 30px; }
+    h1 { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+    .meta { font-size: 11px; color: #94a3b8; margin-bottom: 20px; }
+    h2 { font-size: 12px; font-weight: 700; margin: 15px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #f8fafc; padding: 8px; font-size: 10px; text-align: left; color: #64748b; border: 1px solid #e2e8f0; font-weight: 600; }
+    td { padding: 6px 8px; font-size: 10px; border: 1px solid #f1f5f9; }
+    tr:nth-child(even) { background: #f8fafc; }
+    .legend { font-size: 9px; color: #94a3b8; margin-top: 12px; line-height: 1.6; }
+    .expired { color: #991b1b; font-weight: 600; }
+    .warning { color: #92400e; font-weight: 600; }
+    .valid { color: #065f46; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Scheda Maestranze Autorizzate</h1>
+  <div class="meta">
+    <strong>Impresa:</strong> ${imp.nome} — ${imp.attivita}<br/>
+    <strong>Cantiere:</strong> ${cantiere.nome}<br/>
+    <strong>Data:</strong> ${oggi}
+  </div>
+  <h2>Maestranze con Scadenze Formazione</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Nominativo</th>
+        <th>Qualifica</th>
+        <th>Idoneità</th>
+        <th>F. Base</th>
+        <th>F. Specifica (Scad.)</th>
+        <th>Aggiornamento (Scad.)</th>
+        <th>Preposto (Scad.)</th>
+        <th>Ponteggiatori</th>
+        <th>Antincendio</th>
+        <th>P.S.</th>
+      </tr>
+    </thead>
+    <tbody>${mae || '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:15px">Nessuna maestranza inserita</td></tr>'}</tbody>
+  </table>
+  <div class="legend">
+    <strong>Note:</strong><br/>
+    • Formazione base non scade (Accordo Stato-Regioni 21/12/2011)<br/>
+    • Formazione specifica: aggiornamento ogni 5 anni<br/>
+    • <span class="expired">Scaduto</span> — <span class="warning">Entro 60 giorni</span> — <span class="valid">Valido</span>
+  </div>
+</body>
+</html>`;
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────────────────────────
+function buildCSV(imp) {
+  const e = v => `"${String(v || "").replace(/"/g, '""')}"`;
+  return [
+    ["SCHEDA MAESTRANZE — Assistente CSE"],
+    ["Impresa", imp.nome],
+    ["Attività", imp.attivita || ""],
+    [""],
+    ["MAESTRANZE AUTORIZZATE"],
+    ["Nominativo", "Qualifica", "Idon.", "F.Base", "F.Spec (Scad.)", "Aggiornam. (Scad.)", "Preposto (Scad.)", "Pontegg.", "Antinc.", "P.S."],
+    ...imp.maestranze.map(m => {
+      const fSpecScad = m.formazioneSpec ? calcScadenza(m.formazioneSpec, "formazioneSpec") : "—";
+      const aggScad = m.aggiornamento ? calcScadenza(m.aggiornamento, "aggiornamento") : "—";
+      const prepostoScad = m.preposto ? calcScadenza(m.preposto, "preposto") : "—";
+      return [m.nome, m.qualifica, m.idoneita, m.formazioneBase ? "✓" : "—", fSpecScad, aggScad, prepostoScad, m.ponteggiatori, m.antincendio, m.ps];
+    }),
+    [""],
+    ["NOTE:", "Formazione base non scade. F.Spec e Aggiornamento: ogni 5 anni."],
+  ].map(r => r.map(e).join(",")).join("\n");
+}
+
+// ── UI COMPONENTS ─────────────────────────────────────────────────────────────
+function ExportMenu({ cantiere, imp, onClose }) {
+  const dl = (content, name, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = name;
+    a.click();
+    onClose();
+  };
+
+  return (
+    <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-slate-100 z-50 w-56">
+      <p className="px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">Esporta</p>
+      <button
+        onClick={() => dl(buildSchediMaestanze(cantiere, imp), `maestranze_${imp.nome.replace(/\s+/g, "_")}.html`, "text/html;charset=utf-8")}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
+      >
+        <span>👥</span>
+        <div>
+          <p className="text-sm font-medium text-slate-700">Scheda Maestranze</p>
+          <p className="text-xs text-slate-400">Con scadenze formazione</p>
+        </div>
+      </button>
+      <button
+        onClick={() => dl("\uFEFF" + buildCSV(imp), `maestranze_${imp.nome.replace(/\s+/g, "_")}.csv`, "text/csv;charset=utf-8")}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left border-t border-slate-50"
+      >
+        <span>📊</span>
+        <div>
+          <p className="text-sm font-medium text-slate-700">Excel / CSV</p>
+          <p className="text-xs text-slate-400">Apri con Excel</p>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [users, setUsers] = useState([]);
+  const [user, setUser] = useState({ id: 1, nome: "Demo", cognome: "User", ruolo: "CSE", email: "" });
+  const [page, setPage] = useState("dashboard");
+  const [cantieri, setCantieri] = useState([]);
+  useEffect(() => {
+    const saved = localStorage.getItem("cse-doccheck-cantieri");
+    if (saved) {
+      try {
+        setCantieri(JSON.parse(saved));
+      } catch (error) {
+        console.error("Errore nel caricamento dei cantieri salvati", error);
+      }
+    }
+  }, []);
+  
+  useEffect(() => {
+    localStorage.setItem("cse-doccheck-cantieri", JSON.stringify(cantieri));
+  }, [cantieri]);
+  const [activeCantiere, setActiveCantiere] = useState(null);
+  const [activeImpresa, setActiveImpresa] = useState(null);
+  const [activeTab, setActiveTab] = useState("upload");
+  const [showNewCantiere, setShowNewCantiere] = useState(false);
+  const [newCantiere, setNewCantiere] = useState({ nome: "", indirizzo: "", cse: "", dataInizio: "" });
+  const [showNewImpresa, setShowNewImpresa] = useState(false);
+  const [newImpresa, setNewImpresa] = useState({ nome: "", attivita: "" });
+  const [showAddMaestra, setShowAddMaestra] = useState(false);
+  const [newMaestranza, setNewMaestranza] = useState({
+    nome: "", qualifica: "", idoneita: "", formazioneBase: "", formazioneSpec: "", aggiornamento: "",
+    preposto: "", ponteggiatori: "", antincendio: "", ps: "", confinati: "", mdt: "", ple: "", gruista: "", unilav: ""
+  });
+  const [dragOver, setDragOver] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const fileRef = useRef();
+
+  const updateImpresa = useCallback(
+    (cid, iid, patch) =>
+      setCantieri(prev =>
+        prev.map(c =>
+          c.id !== cid ? c : { ...c, imprese: c.imprese.map(i => (i.id !== iid ? i : { ...i, ...patch })) }
+        )
+      ),
+    []
+  );
+
+  if (!user) return null;
+
+  const getCantiere = id => cantieri.find(c => c.id === id);
+  const getImpresa = (cid, iid) => getCantiere(cid)?.imprese.find(i => i.id === iid);
+
+  const dc = (v, t) => {
+    if (!v || v === "—") return <span className="text-slate-300">—</span>;
+    if (v === "✓") return <span className="text-emerald-600 font-semibold">✓</span>;
+    const exp = isExpired(v);
+    const soon = isExpiringSoon(v);
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${exp ? "bg-red-100 text-red-700" : soon ? "bg-amber-100 text-amber-700" : "text-slate-700"}`}>
+        {v}
+      </span>
+    );
+  };
+
+  const f2b = f => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(f);
+  });
+
+  const xJSON = str => {
+    let s = str.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+    const st = s.indexOf("{");
+    if (st === -1) throw new Error("Nessun JSON");
+    let d = 0, en = -1;
+    for (let i = st; i < s.length; i++) {
+      if (s[i] === "{") d++;
+      else if (s[i] === "}") {
+        d--;
+        if (d === 0) {
+          en = i;
+          break;
+        }
+      }
+    }
+    if (en === -1) {
+      s = s.slice(st).replace(/,\s*$/, "");
+      const op = (s.match(/\[/g) || []).length - (s.match(/\]/g) || []).length;
+      const ob = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+      for (let i = 0; i < op; i++) s += "]";
+      for (let i = 0; i < ob; i++) s += "}";
+    } else {
+      s = s.slice(st, en + 1);
+    }
+    return JSON.parse(s);
+  };
+
+  const batchPrompt = (files, existing, bi, bt) => `CSE esperto D.Lgs. 81/2008. Batch ${bi + 1}/${bt}.\n${FORMATION_RULES}\n${DOC_RULES}\n1. MAESTRANZE (Title Case; già presenti: ${existing || "nessuno"}): nome,qualifica,idoneita,formazioneBase,formazioneSpec,aggiornamento,preposto,ponteggiatori,antincendio,ps,confinati,mdt,ple,gruista,unilav\n2. CHECK-LIST (si/no/na): a1-a7,b1,c1,d1-d2,e1,f1-f2,g1-g2,h1,i1,l1-l4\n3. ALLEGATI presenti (chiavi esatte): ${ALLEGATI.slice(0, 8).join(", ")}\nSOLO JSON: {"maestranze":[],"checks":{},"allegati":[],"scadenzaAllegati":{},"note":""}`;
+
+  const callBatch = async (files, existing, bi, bt) => {
+    const blocks = [];
+    for (const f of files) {
+      const b64 = await f2b(f._file || f);
+      if (f.type === "application/pdf")
+        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } });
+      else if (f.type?.startsWith("image/"))
+        blocks.push({ type: "image", source: { type: "base64", media_type: f.type, data: b64 } });
+    }
+    blocks.push({ type: "text", text: batchPrompt(files, existing, bi, bt) });
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: blocks }]
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    return xJSON(data.content?.map(b => b.text || "").join("") || "");
+  };
+
+  const extractAll = async (cid, iid, newFiles) => {
+    const imp = getImpresa(cid, iid);
+    updateImpresa(cid, iid, { extracting: true, extractLog: ["🚀 Avvio..."] });
+    const af = newFiles.map(f => ({ name: f.name, size: f.size, type: f.type, _file: f }));
+    const batches = [];
+    for (let i = 0; i < af.length; i += BATCH_SIZE) batches.push(af.slice(i, i + BATCH_SIZE));
+    let am = [...(imp?.maestranze || [])], ac = { ...(imp?.checks || {}) }, aa = { ...(imp?.allegati || {}) }, as = { ...(imp?.allegatiScadenze || {}) };
+    let tN = 0, tM = 0, notes = [];
+    const log = [`📦 ${af.length} file → ${batches.length} batch`];
+    updateImpresa(cid, iid, { extractLog: [...log], extracting: true });
+
+    for (let b = 0; b < batches.length; b++) {
+      const batch = batches[b];
+      log.push(`📂 Batch ${b + 1}/${batches.length}: ${batch.map(f => f.name).join(", ")}`);
+      updateImpresa(cid, iid, { extractLog: [...log], extracting: true });
+      try {
+        const p = await callBatch(batch, am.map(m => m.nome).join(", "), b, batches.length);
+        
+        // Deduplicazione intelligente
+        const before = am.length;
+        am = deduplicateWorkers(am, p.maestranze || []);
+        const added = am.length - before;
+        const merged = (p.maestranze || []).length - added;
+        tN += added;
+        tM += merged;
+
+        // Auto-calcolo scadenze
+        am = am.map(m => ({
+          ...m,
+          aggiornamento: m.aggiornamento && m.aggiornamento !== "—" ? calcScadenza(m.aggiornamento, "aggiornamento") : m.aggiornamento,
+          formazioneSpec: m.formazioneSpec && m.formazioneSpec !== "—" ? calcScadenza(m.formazioneSpec, "formazioneSpec") : m.formazioneSpec,
+          preposto: m.preposto && m.preposto !== "—" ? calcScadenza(m.preposto, "preposto") : m.preposto,
+        }));
+
+        ac = mergeChecks(ac, p.checks || {});
+        const bA = {};
+        for (const a of (p.allegati || [])) bA[a] = true;
+        aa = mergeAllegati(aa, bA);
+        if (p.scadenzaAllegati) as = { ...as, ...p.scadenzaAllegati };
+        if (p.note) notes.push(p.note);
+
+        log.push(`  ✅ +${added} lavoratori${merged > 0 ? `, ${merged} uniti` : ""} | ${(p.allegati || []).length} allegati`);
+      } catch (err) {
+        log.push(`  ❌ Errore: ${err.message}`);
+      }
+      updateImpresa(cid, iid, { extractLog: [...log], extracting: true });
+      if (b < batches.length - 1) await new Promise(r => setTimeout(r, 800));
+    }
+
+    log.push(`✅ Fine — 👷 ${tN} nuovi, ${tM} uniti | 📋 ${Object.values(ac).filter(v => v === "si").length}/${CHECKLIST_ITEMS.length} check | 📎 ${Object.keys(aa).filter(k => aa[k]).length}/${ALLEGATI.length} allegati`);
+    updateImpresa(cid, iid, { extracting: false, extractLog: log, maestranze: am, checks: ac, allegati: aa, allegatiScadenze: as, note: notes.join(" | ") || imp?.note || "", uploadedFiles: [...(imp?.uploadedFiles || []), ...af] });
+  };
+
+  const handleFiles = useCallback((cid, iid, fl) => {
+    const a = Array.from(fl).filter(f => f.type === "application/pdf" || f.type.startsWith("image/"));
+    if (a.length) extractAll(cid, iid, a);
+  }, [cantieri]);
+
+  // ── HEADER ────────────────────────────────────────────────────────────────
+  const Hdr = ({ left, right, title, sub }) => (
+    <header className="bg-slate-900 text-white px-6 py-4 flex items-center gap-4 shadow">
+      {left}{left && <div className="w-px h-4 bg-slate-700" />}
+      <div className="flex items-center gap-3 flex-1">
+        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0">A</div>
+        {title && sub ? <div><div className="font-semibold text-sm">{title}</div><div className="text-xs text-slate-400">{sub}</div></div> : <span className="font-semibold tracking-tight">{title || "Assistente CSE"} <span className="text-slate-400 text-xs font-normal">D.Lgs. 81/2008</span></span>}
+      </div>
+      <div className="flex items-center gap-2">
+        {right}
+        <div className="flex items-center gap-2 border-l border-slate-700 pl-3 ml-1">
+          <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{user.nome[0]}{user.cognome[0]}</div>
+          <div className="hidden sm:block leading-tight"><div className="text-xs font-medium">{user.nome} {user.cognome}</div><div className="text-xs text-slate-400">{user.ruolo}</div></div>
+        </div>
+      </div>
+    </header>
+  );
+
+  // ══ DASHBOARD ═════════════════════════════════════════════════════════════
+  if (page === "dashboard") return (
+    <div className="min-h-screen bg-slate-50">
+      <Hdr right={<button onClick={() => { setNewCantiere({ nome: "", indirizzo: "", cse: user.ruolo === "CSE" ? `${user.nome} ${user.cognome}` : "", dataInizio: "" }); setShowNewCantiere(true); }} className="bg-blue-500 hover:bg-blue-400 text-white text-sm px-4 py-2 rounded-lg font-medium transition">+ Nuovo cantiere</button>} />
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <h1 className="text-2xl font-bold text-slate-800 mb-1">Dashboard Cantieri</h1>
+        <p className="text-slate-500 text-sm mb-6">{cantieri.length} cantieri attivi</p>
+        {cantieri.length === 0 ? (
+          <div className="text-center py-24 text-slate-400">
+            <div className="text-6xl mb-4">🏗️</div>
+            <p className="font-semibold text-lg text-slate-600">Nessun cantiere attivo</p>
+            <p className="text-sm mt-1 mb-6">Crea il primo cantiere per iniziare la verifica documentale</p>
+            <button onClick={() => { setNewCantiere({ nome: "", indirizzo: "", cse: user.ruolo === "CSE" ? `${user.nome} ${user.cognome}` : "", dataInizio: "" }); setShowNewCantiere(true); }} className="bg-blue-500 hover:bg-blue-400 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition">+ Crea il primo cantiere</button>
+          </div>
+        ) : (
+          <div className="grid gap-4">{cantieri.map(c => {
+            const tot = c.imprese.length, idon = c.imprese.filter(i => calcStatus(i.checks) === "idoneo").length;
+            return (
+              <div key={c.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition cursor-pointer" onClick={() => { setActiveCantiere(c.id); setPage("cantiere"); }}>
+                <div className="flex items-start justify-between"><div><h2 className="font-bold text-slate-800">{c.nome}</h2><p className="text-slate-500 text-sm">{c.indirizzo}</p><p className="text-slate-400 text-xs mt-1">CSE: {c.cse} · Inizio: {c.dataInizio}</p></div><div className="text-right"><div className="text-2xl font-bold text-slate-700">{idon}<span className="text-base text-slate-400">/{tot}</span></div><div className="text-xs text-slate-500">imprese idonee</div></div></div>
+                <div className="mt-3 flex gap-1 flex-wrap">{c.imprese.map(i => <div key={i.id} title={i.nome} className={`w-4 h-4 rounded-sm ${STATUS_COLORS[calcStatus(i.checks)]}`} />)}</div>
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: tot ? `${Math.round(idon / tot * 100)}%` : "0%" }} /></div>
+              </div>
+            );
+          })}</div>
+        )}
+      </div>
+      {showNewCantiere && <Modal title="Nuovo cantiere" onClose={() => setShowNewCantiere(false)}><div className="space-y-3">{[["Nome cantiere", "nome"], ["Indirizzo", "indirizzo"], ["CSE incaricato", "cse"], ["Data inizio", "dataInizio"]].map(([l, k]) => <Field key={k} label={l} value={newCantiere[k]} onChange={v => setNewCantiere(p => ({ ...p, [k]: v }))} />)}<BtnP onClick={() => { setCantieri(p => [...p, { id: Date.now(), ...newCantiere, imprese: [] }]); setShowNewCantiere(false); }}>Crea cantiere</BtnP></div></Modal>}
+    </div>
+  );
+
+  // ══ CANTIERE ══════════════════════════════════════════════════════════════
+  if (page === "cantiere" && activeCantiere) {
+    const c = getCantiere(activeCantiere);
+    if (!c) return null;
+    return (<div className="min-h-screen bg-slate-50">
+      <Hdr left={<Bk onClick={() => setPage("dashboard")} label="Dashboard" />} title={c.nome} sub={c.cse} right={<button onClick={() => setShowNewImpresa(true)} className="bg-blue-500 hover:bg-blue-400 text-white text-sm px-4 py-2 rounded-lg font-medium transition">+ Impresa</button>} />
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-4 gap-3 mb-6">{["idoneo", "parziale", "non idoneo", "da verificare"].map(s => <div key={s} className="bg-white rounded-xl border border-slate-100 p-3 text-center shadow-sm"><div className={`text-2xl font-bold ${s === "idoneo" ? "text-emerald-600" : s === "parziale" ? "text-amber-500" : s === "non idoneo" ? "text-red-500" : "text-slate-400"}`}>{c.imprese.filter(i => calcStatus(i.checks) === s).length}</div><div className="text-xs text-slate-500 capitalize">{s}</div></div>)}</div>
+        <div className="space-y-3">{c.imprese.map(imp => {
+          const st = calcStatus(imp.checks), done = CHECKLIST_ITEMS.filter(i => i.required && imp.checks[i.id] === "si").length, tot = CHECKLIST_ITEMS.filter(i => i.required).length;
+          return (<div key={imp.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition cursor-pointer" onClick={() => { setActiveImpresa(imp.id); setActiveTab("upload"); setPage("impresa"); }}><div className={`w-3 h-3 rounded-full flex-shrink-0 ${STATUS_COLORS[st]}`} /><div className="flex-1 min-w-0"><div className="font-semibold text-slate-800 text-sm truncate">{imp.nome}</div><div className="text-xs text-slate-500">{imp.attivita}</div></div><div className="flex items-center gap-3">{imp.uploadedFiles?.length > 0 && <span className="text-xs text-slate-400">📎{imp.uploadedFiles.length}</span>}<span className="text-xs text-slate-500">{done}/{tot}</span><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BADGE[st]}`}>{st}</span><span className="text-slate-300">›</span></div></div>);
+        })}</div>
+        {c.imprese.length === 0 && <ES icon="🏢" title="Nessuna impresa" sub="Aggiungi le imprese esecutrici" />}
+      </div>
+      {showNewImpresa && <Modal title="Aggiungi impresa" onClose={() => setShowNewImpresa(false)}><div className="space-y-3"><Field label="Ragione sociale" value={newImpresa.nome} onChange={v => setNewImpresa(p => ({ ...p, nome: v }))} /><Field label="Attività svolta" value={newImpresa.attivita} onChange={v => setNewImpresa(p => ({ ...p, attivita: v }))} /><BtnP onClick={() => { setCantieri(prev => prev.map(c => c.id !== activeCantiere ? c : { ...c, imprese: [...c.imprese, { ...mkImpresa(), ...newImpresa }] })); setNewImpresa({ nome: "", attivita: "" }); setShowNewImpresa(false); }}>Aggiungi</BtnP></div></Modal>}
+    </div>);
+  }
+
+  // ══ IMPRESA ═══════════════════════════════════════════════════════════════
+  if (page === "impresa" && activeCantiere && activeImpresa) {
+    const c = getCantiere(activeCantiere), imp = getImpresa(activeCantiere, activeImpresa);
+    if (!c || !imp) return null;
+    const st = calcStatus(imp.checks);
+    const TLABELS = { "upload": "📁 Carica", "maestranze": "👥 Maestranze", "check-list": "✅ Check-list", "allegati": "📎 Allegati" };
+
+    return (<div className="min-h-screen bg-slate-50">
+      <Hdr left={<Bk onClick={() => { setShowExport(false); setPage("cantiere"); }} label={c.nome} />} title={imp.nome} sub={imp.attivita}
+        right={<div className="flex items-center gap-2"><span className={`text-xs px-2 py-1 rounded-full font-medium ${BADGE[st]}`}>{st}</span><div className="relative"><button onClick={() => setShowExport(v => !v)} className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-2 rounded-lg font-medium transition">⬇ Esporta</button>{showExport && <ExportMenu cantiere={c} imp={imp} onClose={() => setShowExport(false)} />}</div></div>} />
+      <div className="bg-white border-b border-slate-100 px-6"><div className="max-w-4xl mx-auto flex overflow-x-auto">{Object.keys(TLABELS).map(t => <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition ${activeTab === t ? "border-blue-500 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{TLABELS[t]}</button>)}</div></div>
+      <div className="max-w-4xl mx-auto px-6 py-6">
+
+        {activeTab === "upload" && <div className="space-y-4">
+          <div className={`border-2 border-dashed rounded-2xl p-10 text-center transition cursor-pointer ${dragOver ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-slate-300 bg-white"}`} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(activeCantiere, activeImpresa, e.dataTransfer.files); }} onClick={() => fileRef.current?.click()}>
+            <input ref={fileRef} type="file" multiple accept=".pdf,image/*" className="hidden" onChange={e => handleFiles(activeCantiere, activeImpresa, e.target.files)} />
+            <div className="text-4xl mb-3">📂</div><p className="font-semibold text-slate-700">Trascina qui i documenti</p><p className="text-slate-400 text-sm mt-1">oppure clicca per selezionare</p><p className="text-slate-300 text-xs mt-3">PDF · JPEG · PNG — batch da {BATCH_SIZE} file</p>
+          </div>
+          {(imp.extracting || imp.extractLog?.length > 0) && <div className="bg-slate-900 rounded-xl p-4 font-mono text-xs max-h-64 overflow-y-auto"><div className="text-slate-400 mb-2 font-sans font-semibold uppercase tracking-wider text-xs">Log</div>{imp.extractLog?.map((l, i) => <div key={i} className={`leading-5 ${l.includes("✅") || l.includes("👷") || l.includes("📋") || l.includes("📎") ? "text-emerald-400" : l.includes("❌") ? "text-red-400" : "text-slate-300"}`}>{l}</div>)}{imp.extracting && <div className="flex items-center gap-2 text-slate-400 mt-1"><div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin" />In corso…</div>}</div>}
+          {imp.uploadedFiles?.length > 0 && <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"><div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between"><span className="font-semibold text-slate-700 text-sm">File caricati ({imp.uploadedFiles.length})</span>{!imp.extracting && <button onClick={() => updateImpresa(activeCantiere, activeImpresa, { uploadedFiles: [], checks: {}, allegati: {}, allegatiScadenze: {}, maestranze: [], extractLog: [], note: "", analyzed: false, aiSummary: "" })} className="text-xs text-red-400 hover:underline">Cancella tutto</button>}</div><div className="divide-y divide-slate-50 max-h-48 overflow-y-auto">{imp.uploadedFiles.map((f, i) => <div key={i} className="px-5 py-2 flex items-center gap-3"><span>{f.type === "application/pdf" ? "📄" : "🖼️"}</span><div className="flex-1 min-w-0"><div className="text-sm text-slate-700 truncate">{f.name}</div><div className="text-xs text-slate-400">{(f.size / 1024).toFixed(0)} KB</div></div></div>)}</div></div>}
+          {!imp.uploadedFiles?.length && !imp.extractLog?.length && <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700"><strong>Come funziona:</strong> carica tutti i PDF e immagini ricevuti. Vengono elaborati in batch: maestranze e check-list estratti automaticamente con scadenze generate automaticamente. Usa poi <strong>Esporta</strong> per scaricare la scheda maestranze.</div>}
+        </div>}
+
+        {activeTab === "maestranze" && <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"><div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between"><span className="font-semibold text-slate-700 text-sm">Maestranze Autorizzate ({imp.maestranze.length})</span><button onClick={() => setShowAddMaestra(true)} className="bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-blue-400 transition font-medium">+ Aggiungi</button></div>{imp.maestranze.length === 0 ? <div className="text-center py-12 text-slate-400"><div className="text-3xl mb-2">👷</div><p className="text-sm">Carica i documenti per estrarre le maestranze</p><button onClick={() => setActiveTab("upload")} className="mt-2 text-xs text-blue-500 hover:underline">→ Carica Documenti</button></div> : <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-50 text-slate-500 font-semibold">{["Nominativo", "Qualifica", "Idon.", "F.Base", "F.Spec (Scad.)", "Aggiornam. (Scad.)", "Preposto (Scad.)", "Pontegg.", "Antinc.", "P.S.", ""].map((h, i) => <th key={i} className="px-3 py-2 text-left whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-50">{imp.maestranze.map((m, i) => {
+          const fSpecScad = m.formazioneSpec ? calcScadenza(m.formazioneSpec, "formazioneSpec") : "—";
+          const aggScad = m.aggiornamento ? calcScadenza(m.aggiornamento, "aggiornamento") : "—";
+          const prepostoScad = m.preposto ? calcScadenza(m.preposto, "preposto") : "—";
+          return (<tr key={i} className="hover:bg-slate-50"><td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{m.nome}</td><td className="px-3 py-2.5 text-slate-600 max-w-24 truncate">{m.qualifica}</td><td className="px-3 py-2.5 text-center">{dc(m.idoneita)}</td><td className="px-3 py-2.5 text-center">{m.formazioneBase ? <span className="text-emerald-600 font-semibold">✓</span> : <span className="text-slate-300">—</span>}</td><td className="px-3 py-2.5 text-center">{dc(fSpecScad)}</td><td className="px-3 py-2.5 text-center">{dc(aggScad)}</td><td className="px-3 py-2.5 text-center">{dc(prepostoScad)}</td><td className="px-3 py-2.5 text-center">{m.ponteggiatori ? (m.ponteggiatori === "✓" ? <span className="text-emerald-600 font-semibold">✓</span> : m.ponteggiatori) : <span className="text-slate-300">—</span>}</td><td className="px-3 py-2.5 text-center">{m.antincendio || <span className="text-slate-300">—</span>}</td><td className="px-3 py-2.5 text-center">{m.ps || <span className="text-slate-300">—</span>}</td><td className="px-3 py-2.5"><button onClick={() => updateImpresa(activeCantiere, activeImpresa, { maestranze: imp.maestranze.filter((_, j) => j !== i) })} className="text-slate-300 hover:text-red-400">✕</button></td></tr>);
+        })}</tbody></table></div>}<div className="px-5 py-2 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-4 text-xs text-slate-500"><span>* F. base non scade (Acc. Stato-Regioni 21/12/2011)</span><span className="flex items-center gap-1"><span className="px-1 bg-red-100 text-red-700 rounded">scaduto</span></span><span className="flex items-center gap-1"><span className="px-1 bg-amber-100 text-amber-700 rounded">entro 60gg</span></span></div></div>}
+
+        {activeTab === "check-list" && <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"><div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between"><span className="font-semibold text-slate-700 text-sm">Check-list POS — Allegato XV D.Lgs. 81/2008</span><span className="text-xs text-slate-400">{CHECKLIST_ITEMS.filter(i => imp.checks[i.id] === "si").length}/{CHECKLIST_ITEMS.length}</span></div>{["a", "b", "c", "d", "e", "f", "g", "h", "i", "l"].map(l => {
+          const items = CHECKLIST_ITEMS.filter(i => i.lettera === l);
+          if (!items.length) return null;
+          return (<div key={l}><div className="px-5 py-2 bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider">Lettera {l}</div>{items.map(item => <div key={item.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-50 border-b border-slate-50"><div className="flex gap-1.5 mt-0.5 flex-shrink-0">{["si", "no", "n.a."].map(v => <button key={v} onClick={() => updateImpresa(activeCantiere, activeImpresa, { checks: { ...imp.checks, [item.id]: v } })} className={`text-xs px-1.5 py-0.5 rounded font-medium border transition ${imp.checks[item.id] === v ? (v === "si" ? "bg-emerald-500 text-white border-emerald-500" : v === "no" ? "bg-red-500 text-white border-red-500" : "bg-slate-400 text-white border-slate-400") : "bg-white text-slate-400 border-slate-200 hover:border-slate-400"}`}>{v.toUpperCase()}</button>)}</div><span className="text-sm text-slate-700 leading-snug">{item.label}{item.required && <span className="ml-1 text-slate-300 text-xs">*</span>}</span></div>)}</div>);
+        })}<div className="px-5 py-3 border-t border-slate-100"><label className="text-xs font-medium text-slate-600 block mb-1">Note CSE</label><textarea value={imp.note} onChange={e => updateImpresa(activeCantiere, activeImpresa, { note: e.target.value })} rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" placeholder="Carenze, integrazioni richieste…" /></div></div>}
+
+        {activeTab === "allegati" && <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"><div className="px-5 py-3 border-b border-slate-100"><span className="font-semibold text-slate-700 text-sm">Allegati obbligatori</span></div>{ALLEGATI_CONFIG.map(cfg => {
+          const presente = !!imp.allegati[cfg.key];
+          return (<div key={cfg.key} className="px-5 py-3 border-b border-slate-50 hover:bg-slate-50"><div className="flex items-center gap-3"><button onClick={() => updateImpresa(activeCantiere, activeImpresa, { allegati: { ...imp.allegati, [cfg.key]: !presente } })} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${presente ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 hover:border-emerald-400"}`}>{presente && <span className="text-xs">✓</span>}</button><span className="text-sm text-slate-700 flex-1">{cfg.key}</span></div></div>);
+        })}</div>}
+
+      </div>
+      {showAddMaestra && <Modal title="Aggiungi maestranza" onClose={() => setShowAddMaestra(false)}><div className="space-y-3">{[["Nominativo", "nome"], ["Qualifica", "qualifica"], ["Idoneità sanitaria (gg/mm/aa)", "idoneita"], ["Formazione base", "formazioneBase"], ["Formazione specifica (gg/mm/aa)", "formazioneSpec"], ["Aggiornamento (gg/mm/aa)", "aggiornamento"], ["Preposto (gg/mm/aa)", "preposto"]].map(([l, k]) => <Field key={k} label={l} value={newMaestranza[k]} onChange={v => setNewMaestranza(p => ({ ...p, [k]: v }))} />)}<BtnP onClick={() => { updateImpresa(activeCantiere, activeImpresa, { maestranze: [...imp.maestranze, newMaestranza] }); setNewMaestranza({ nome: "", qualifica: "", idoneita: "", formazioneBase: "", formazioneSpec: "", aggiornamento: "", preposto: "", ponteggiatori: "", antincendio: "", ps: "", confinati: "", mdt: "", ple: "", gruista: "", unilav: "" }); setShowAddMaestra(false); }}>Aggiungi</BtnP></div></Modal>}
+    </div>);
+  }
+  return null;
+}
+
+// ── UI ATOMS ──────────────────────────────────────────────────────────────────
+function Bk({ onClick, label }) { return <button onClick={onClick} className="text-slate-400 hover:text-white text-sm whitespace-nowrap">← {label}</button>; }
+function Modal({ title, children, onClose }) { return (<div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><span className="font-semibold text-slate-800">{title}</span><button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button></div><div className="px-5 py-4">{children}</div></div></div>); }
+function Field({ label, value, onChange }) { return (<div><label className="text-xs font-medium text-slate-600 block mb-1">{label}</label><input value={value} onChange={e => onChange(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" /></div>); }
+function BtnP({ children, onClick }) { return <button onClick={onClick} className="w-full bg-blue-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-400 transition">{children}</button>; }
+function ES({ icon, title, sub }) { return (<div className="text-center py-20 text-slate-400"><div className="text-5xl mb-3">{icon}</div><p className="font-medium text-slate-600">{title}</p><p className="text-sm">{sub}</p></div>); }
