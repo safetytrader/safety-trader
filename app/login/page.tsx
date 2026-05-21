@@ -119,11 +119,12 @@ export default function LoginPage() {
 
             <div className="eyebrow">Controllo documentale Sicurezza sul Lavoro</div>
 
-            <h1>Piattaforma per la gestione documentale della sicurezza nei cantieri.</h1>
+            <h1>Gestisci documenti, scadenze e imprese in un unico spazio.</h1>
 
             <p className="lead">
-              Organizza Cantiere, Impresa, Checklist, Allegati, Maestranze e
-              Documenti in un unico ambiente operativo.
+              Piattaforma per la gestione documentale della sicurezza nei cantieri:
+              cantieri, imprese, checklist, allegati, maestranze e documenti sempre sotto
+              controllo.
             </p>
 
             <div className="feature-list">
@@ -131,14 +132,14 @@ export default function LoginPage() {
                 <span>01</span>
                 <div>
                   <strong>Gestione cantieri e imprese</strong>
-                  <p>Organizza Cantiere, Impresa e Ruolo in modo strutturato.</p>
+                  <p>Organizza cantieri, imprese coinvolte e ruoli operativi.</p>
                 </div>
               </div>
 
               <div className="feature-card">
                 <span>02</span>
                 <div>
-                  <strong>Checklist e Allegati</strong>
+                  <strong>Check-list documentale e allegati</strong>
                   <p>Monitora documenti aziendali, scadenze e completezza.</p>
                 </div>
               </div>
@@ -214,7 +215,7 @@ export default function LoginPage() {
 
               {!registerMode ? (
                 <p className="forgot-link-wrap">
-                  <Link href="/forgot-password" className="forgot-link">
+                  <Link href="/forgot-password" className="auth-text-link">
                     Password dimenticata?
                   </Link>
                 </p>
@@ -262,7 +263,7 @@ export default function LoginPage() {
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="sede_via">Indirizzo sede — Via</label>
+                    <label htmlFor="sede_via">Indirizzo sede</label>
                     <input
                       id="sede_via"
                       type="text"
@@ -300,8 +301,8 @@ export default function LoginPage() {
                 </div>
               ) : null}
 
-              <p className="mode-toggle">
-                {registerMode ? (
+              {registerMode ? (
+                <p className="mode-toggle">
                   <button
                     type="button"
                     className="mode-toggle-btn"
@@ -313,20 +314,8 @@ export default function LoginPage() {
                   >
                     Hai già un account? Accedi
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="mode-toggle-btn"
-                    onClick={() => {
-                      setRegisterMode(true);
-                      setMessage("");
-                      setMessageType(null);
-                    }}
-                  >
-                    Crea un nuovo account
-                  </button>
-                )}
-              </p>
+                </p>
+              ) : null}
 
               <div className="actions">
                 <button
@@ -349,8 +338,9 @@ export default function LoginPage() {
               </div>
 
               <div className="auth-links">
-                <Link href="/privacy">Privacy e note legali</Link>
-                <Link href="/">Torna alla dashboard</Link>
+                <Link href="/privacy" className="auth-text-link">
+                  Privacy e note legali
+                </Link>
               </div>
             </div>
 
@@ -421,7 +411,7 @@ export default function LoginPage() {
 
         .product-panel {
           position: relative;
-          padding: 44px;
+          padding: 34px 36px 32px;
           min-height: 0;
           overflow: hidden;
           display: flex;
@@ -437,7 +427,7 @@ export default function LoginPage() {
           display: flex;
           align-items: center;
           gap: 16px;
-          margin-bottom: 32px;
+          margin-bottom: 22px;
           flex-shrink: 0;
         }
 
@@ -489,34 +479,34 @@ export default function LoginPage() {
         h1 {
           max-width: 680px;
           margin: 0;
-          font-size: clamp(34px, 4.2vw, 50px);
-          line-height: 1;
-          letter-spacing: -0.06em;
+          font-size: clamp(28px, 3.2vw, 40px);
+          line-height: 1.05;
+          letter-spacing: -0.05em;
           font-weight: 900;
           flex-shrink: 0;
         }
 
         .lead {
           max-width: 610px;
-          margin: 16px 0 0;
+          margin: 12px 0 0;
           color: #cbd5e1;
-          font-size: 15px;
-          line-height: 1.6;
+          font-size: 14px;
+          line-height: 1.5;
           flex-shrink: 0;
         }
 
         .feature-list {
           display: grid;
-          gap: 10px;
-          margin-top: 28px;
+          gap: 8px;
+          margin-top: 18px;
           flex: 1;
           min-height: 0;
         }
 
         .feature-card {
           display: flex;
-          gap: 14px;
-          padding: 14px;
+          gap: 12px;
+          padding: 11px 12px;
           border: 1px solid rgba(255, 255, 255, 0.11);
           border-radius: 22px;
           background: rgba(255, 255, 255, 0.075);
@@ -553,10 +543,10 @@ export default function LoginPage() {
 
         .legal-note {
           max-width: 640px;
-          margin: 18px 0 0;
+          margin: 12px 0 0;
           color: #94a3b8;
-          font-size: 11px;
-          line-height: 1.5;
+          font-size: 10.5px;
+          line-height: 1.45;
           flex-shrink: 0;
         }
 
@@ -649,8 +639,8 @@ export default function LoginPage() {
         .auth-subtitle {
           margin: 8px 0 20px;
           color: #64748b;
-          font-size: 14px;
-          line-height: 1.55;
+          font-size: 12px;
+          line-height: 1.45;
         }
 
         .message {
@@ -675,22 +665,22 @@ export default function LoginPage() {
         }
 
         .forgot-link-wrap {
-          margin: 4px 0 0;
+          margin: 6px 0 2px;
           text-align: right;
         }
 
-        .forgot-link {
+        .auth-text-link {
+          color: #2563eb;
           font-size: 12px;
+          line-height: 1.45;
           font-weight: 700;
-          color: #64748b;
-          text-decoration: none;
+          text-decoration: underline;
+          text-underline-offset: 3px;
           transition: color 0.18s ease;
         }
 
-        .forgot-link:hover {
-          color: #2563eb;
-          text-decoration: underline;
-          text-underline-offset: 3px;
+        .auth-text-link:hover {
+          color: #1d4ed8;
         }
 
         .form-group {
@@ -780,23 +770,8 @@ export default function LoginPage() {
 
         .auth-links {
           display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          margin-top: 18px;
-          padding-top: 18px;
-          border-top: 1px solid #eef2f7;
-        }
-
-        .auth-links a {
-          color: #64748b;
-          font-size: 13px;
-          font-weight: 700;
-          text-decoration: none;
-          transition: color 0.18s ease;
-        }
-
-        .auth-links a:hover {
-          color: #2563eb;
+          justify-content: center;
+          margin-top: 14px;
         }
 
         .security-note {
@@ -865,17 +840,31 @@ export default function LoginPage() {
           }
         }
 
-        @media (max-height: 720px) {
-          .legal-note {
-            display: none;
+        @media (max-height: 700px) {
+          .product-panel {
+            padding: 28px 30px 26px;
           }
 
-          .feature-card p {
-            display: none;
+          .brand-row {
+            margin-bottom: 16px;
+          }
+
+          h1 {
+            font-size: clamp(26px, 3vw, 36px);
+          }
+
+          .feature-list {
+            margin-top: 14px;
+            gap: 6px;
           }
 
           .feature-card {
-            padding: 10px 12px;
+            padding: 9px 10px;
+          }
+
+          .legal-note {
+            margin-top: 10px;
+            font-size: 10px;
           }
         }
 
@@ -951,10 +940,6 @@ export default function LoginPage() {
             font-size: 26px;
           }
 
-          .auth-links {
-            flex-direction: column;
-            align-items: center;
-          }
 
           .profile-grid-2 {
             grid-template-columns: 1fr;
