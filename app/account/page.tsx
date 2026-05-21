@@ -28,28 +28,6 @@ function profileFromMetadata(meta) {
   };
 }
 
-function formatProvider(user) {
-  const identity = user?.identities?.[0];
-  const provider = identity?.provider || user?.app_metadata?.provider;
-  if (!provider) return null;
-  if (provider === "email") return "Email e password";
-  return String(provider).charAt(0).toUpperCase() + String(provider).slice(1);
-}
-
-function formatCreatedAt(user) {
-  const raw = user?.created_at;
-  if (!raw) return null;
-  try {
-    return new Date(raw).toLocaleDateString("it-IT", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return null;
-  }
-}
-
 function validateProfile(profile) {
   if (!profile.nome.trim()) return "Inserisci il nome.";
   if (!profile.cognome.trim()) return "Inserisci il cognome.";
@@ -153,9 +131,6 @@ export default function AccountPage() {
     }
   }
 
-  const provider = user ? formatProvider(user) : null;
-  const createdAt = user ? formatCreatedAt(user) : null;
-
   const setField = (key, value) => {
     setProfile(p => ({ ...p, [key]: value }));
   };
@@ -164,60 +139,43 @@ export default function AccountPage() {
     <>
       <main className="account-page">
         <div className="account-shell">
-          <div className="account-card">
-            <div className="account-brand">
-              <div className="account-mark">ST</div>
-              <div>
-                <div className="account-brand-title">Safety Trader</div>
-                <div className="account-brand-sub">D.Lgs. 81/2008</div>
-              </div>
-            </div>
-
-            {loading ? (
-              <p className="account-loading">Caricamento account…</p>
-            ) : user ? (
-              <>
+          {loading ? (
+            <p className="account-loading">Caricamento account…</p>
+          ) : user ? (
+            <>
+              <header className="account-hero">
+                <span className="account-badge">Profilo utente</span>
                 <h1 className="account-title">Impostazioni account</h1>
                 <p className="account-lead">
-                  Gestisci profilo, dati società e sessione di accesso.
+                  Gestisci i dati del profilo utilizzati nell&apos;app e nei report.
                 </p>
+              </header>
 
-                {message ? (
-                  <div
-                    className={
-                      messageType === "error"
-                        ? "account-message account-message-error"
-                        : "account-message account-message-success"
-                    }
-                    role="status"
-                  >
-                    {message}
-                  </div>
-                ) : null}
+              {message ? (
+                <div
+                  className={
+                    messageType === "error"
+                      ? "account-alert account-alert-error"
+                      : "account-alert account-alert-success"
+                  }
+                  role="status"
+                >
+                  {message}
+                </div>
+              ) : null}
 
+              <div className="account-card">
                 <div className="account-section">
-                  <h2 className="account-section-title">Accesso</h2>
-                  <div className="account-fields">
-                    <div className="account-field account-field-readonly">
-                      <span className="account-field-label">Email</span>
-                      <span className="account-field-value">{user.email || "—"}</span>
+                  <h2 className="account-section-title">Account</h2>
+                  <div className="account-readonly-grid">
+                    <div className="account-readonly-item">
+                      <span className="account-readonly-label">Email utente</span>
+                      <span className="account-readonly-value">{user.email || "—"}</span>
                     </div>
-                    <div className="account-field account-field-readonly">
-                      <span className="account-field-label">Stato</span>
+                    <div className="account-readonly-item">
+                      <span className="account-readonly-label">Stato account</span>
                       <span className="account-status">Account attivo</span>
                     </div>
-                    {provider ? (
-                      <div className="account-field account-field-readonly">
-                        <span className="account-field-label">Metodo di accesso</span>
-                        <span className="account-field-value">{provider}</span>
-                      </div>
-                    ) : null}
-                    {createdAt ? (
-                      <div className="account-field account-field-readonly">
-                        <span className="account-field-label">Account creato il</span>
-                        <span className="account-field-value">{createdAt}</span>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
 
@@ -247,10 +205,10 @@ export default function AccountPage() {
                   </div>
                 </div>
 
-                <div className="account-section">
+                <div className="account-section account-section-last">
                   <h2 className="account-section-title">Società e sede</h2>
-                  <div className="account-form-grid">
-                    <div className="account-form-group">
+                  <div className="account-form-grid account-form-grid-2">
+                    <div className="account-form-group account-form-group-full">
                       <label htmlFor="account-societa">Società</label>
                       <input
                         id="account-societa"
@@ -260,8 +218,8 @@ export default function AccountPage() {
                         autoComplete="organization"
                       />
                     </div>
-                    <div className="account-form-group">
-                      <label htmlFor="account-sede-via">Indirizzo sede — Via</label>
+                    <div className="account-form-group account-form-group-full">
+                      <label htmlFor="account-sede-via">Via</label>
                       <input
                         id="account-sede-via"
                         type="text"
@@ -270,32 +228,30 @@ export default function AccountPage() {
                         autoComplete="street-address"
                       />
                     </div>
-                    <div className="account-form-grid account-form-grid-2">
-                      <div className="account-form-group">
-                        <label htmlFor="account-sede-cap">CAP</label>
-                        <input
-                          id="account-sede-cap"
-                          type="text"
-                          value={profile.sede_cap}
-                          onChange={e => setField("sede_cap", e.target.value)}
-                          autoComplete="postal-code"
-                        />
-                      </div>
-                      <div className="account-form-group">
-                        <label htmlFor="account-sede-citta">Città</label>
-                        <input
-                          id="account-sede-citta"
-                          type="text"
-                          value={profile.sede_citta}
-                          onChange={e => setField("sede_citta", e.target.value)}
-                          autoComplete="address-level2"
-                        />
-                      </div>
+                    <div className="account-form-group">
+                      <label htmlFor="account-sede-cap">CAP</label>
+                      <input
+                        id="account-sede-cap"
+                        type="text"
+                        value={profile.sede_cap}
+                        onChange={e => setField("sede_cap", e.target.value)}
+                        autoComplete="postal-code"
+                      />
+                    </div>
+                    <div className="account-form-group">
+                      <label htmlFor="account-sede-citta">Città</label>
+                      <input
+                        id="account-sede-citta"
+                        type="text"
+                        value={profile.sede_citta}
+                        onChange={e => setField("sede_citta", e.target.value)}
+                        autoComplete="address-level2"
+                      />
                     </div>
                   </div>
                 </div>
 
-                <div className="account-actions account-actions-primary">
+                <div className="account-actions">
                   <button
                     type="button"
                     className="account-btn account-btn-primary"
@@ -304,9 +260,6 @@ export default function AccountPage() {
                   >
                     {saveLoading ? "Salvataggio…" : "Salva modifiche"}
                   </button>
-                </div>
-
-                <div className="account-actions account-actions-secondary">
                   <Link href="/" className="account-btn account-btn-neutral">
                     Torna alla dashboard
                   </Link>
@@ -325,27 +278,26 @@ export default function AccountPage() {
                     Privacy e note legali
                   </Link>
                 </div>
-              </>
-            ) : (
-              <>
-                <h1 className="account-title">Non hai effettuato l&apos;accesso</h1>
-                <p className="account-lead">
-                  Accedi con le tue credenziali per visualizzare e modificare il
-                  profilo.
-                </p>
-                <div className="account-actions account-actions-single">
-                  <Link href="/login" className="account-btn account-btn-primary">
-                    Vai al login
-                  </Link>
-                </div>
-                <div className="account-links">
-                  <Link href="/privacy" className="account-link">
-                    Privacy e note legali
-                  </Link>
-                </div>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          ) : (
+            <div className="account-card">
+              <h1 className="account-title">Non hai effettuato l&apos;accesso</h1>
+              <p className="account-lead">
+                Accedi con le tue credenziali per visualizzare e modificare il profilo.
+              </p>
+              <div className="account-actions account-actions-single">
+                <Link href="/login" className="account-btn account-btn-primary">
+                  Vai al login
+                </Link>
+              </div>
+              <div className="account-links">
+                <Link href="/privacy" className="account-link">
+                  Privacy e note legali
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
@@ -353,146 +305,136 @@ export default function AccountPage() {
         .account-page {
           min-height: 100svh;
           background: #f8fafc;
-          padding: 32px 20px 48px;
+          padding: 28px 24px 48px;
           box-sizing: border-box;
+          font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         }
 
         .account-shell {
-          max-width: 900px;
+          max-width: 1000px;
           margin: 0 auto;
+        }
+
+        .account-loading {
+          margin: 0;
+          padding: 24px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #64748b;
+        }
+
+        .account-hero {
+          margin-bottom: 20px;
+        }
+
+        .account-badge {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 12px;
+          padding: 7px 12px;
+          border-radius: 999px;
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+        }
+
+        .account-title {
+          margin: 0;
+          font-size: clamp(26px, 3vw, 34px);
+          font-weight: 900;
+          letter-spacing: -0.04em;
+          color: #020617;
+          line-height: 1.08;
+        }
+
+        .account-lead {
+          margin: 10px 0 0;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #64748b;
+          max-width: 56ch;
+        }
+
+        .account-alert {
+          margin-bottom: 18px;
+          padding: 14px 16px;
+          border-radius: 16px;
+          font-size: 14px;
+          font-weight: 600;
+          line-height: 1.5;
+        }
+
+        .account-alert-error {
+          border: 1px solid #fecaca;
+          background: linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%);
+          color: #b91c1c;
+          box-shadow: 0 8px 24px rgba(220, 38, 38, 0.08);
+        }
+
+        .account-alert-success {
+          border: 1px solid #bbf7d0;
+          background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+          color: #15803d;
+          box-shadow: 0 8px 24px rgba(22, 163, 74, 0.08);
         }
 
         .account-card {
           border: 1px solid #e2e8f0;
           border-radius: 24px;
           background: #ffffff;
-          padding: 32px 28px 28px;
-          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 12px 36px rgba(15, 23, 42, 0.06);
-        }
-
-        .account-brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 24px;
-        }
-
-        .account-mark {
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
-          background: linear-gradient(145deg, #1e3a8a, #2563eb);
-          color: #ffffff;
-          font-size: 14px;
-          font-weight: 800;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          letter-spacing: 0.04em;
-          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
-        }
-
-        .account-brand-title {
-          font-size: 16px;
-          font-weight: 800;
-          color: #020617;
-          letter-spacing: -0.02em;
-        }
-
-        .account-brand-sub {
-          margin-top: 2px;
-          font-size: 12px;
-          font-weight: 600;
-          color: #64748b;
-        }
-
-        .account-loading {
-          margin: 0;
-          font-size: 14px;
-          color: #64748b;
-        }
-
-        .account-title {
-          margin: 0 0 8px;
-          font-size: 28px;
-          font-weight: 800;
-          letter-spacing: -0.03em;
-          color: #020617;
-        }
-
-        .account-lead {
-          margin: 0 0 20px;
-          font-size: 14px;
-          line-height: 1.6;
-          color: #64748b;
-          max-width: 52ch;
-        }
-
-        .account-message {
-          margin-bottom: 20px;
-          padding: 12px 14px;
-          border-radius: 14px;
-          font-size: 13px;
-          font-weight: 600;
-          line-height: 1.5;
-        }
-
-        .account-message-error {
-          border: 1px solid #fecaca;
-          background: #fef2f2;
-          color: #b91c1c;
-        }
-
-        .account-message-success {
-          border: 1px solid #bbf7d0;
-          background: #f0fdf4;
-          color: #15803d;
+          padding: 28px 28px 24px;
+          box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
         }
 
         .account-section {
+          margin-bottom: 28px;
+          padding-bottom: 28px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        .account-section-last {
           margin-bottom: 24px;
+          padding-bottom: 0;
+          border-bottom: 0;
         }
 
         .account-section-title {
-          margin: 0 0 12px;
-          font-size: 12px;
+          margin: 0 0 16px;
+          font-size: 15px;
           font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: #475569;
+          letter-spacing: -0.02em;
+          color: #0f172a;
         }
 
-        .account-fields {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
+        .account-readonly-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
         }
 
-        .account-field {
+        .account-readonly-item {
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          padding: 14px 16px;
+          gap: 8px;
+          padding: 16px;
           border-radius: 16px;
           border: 1px solid #e2e8f0;
           background: #f8fafc;
         }
 
-        .account-field-readonly {
-          background: #f8fafc;
-        }
-
-        .account-field-label {
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: #94a3b8;
-        }
-
-        .account-field-value {
-          font-size: 15px;
+        .account-readonly-label {
+          font-size: 13px;
           font-weight: 600;
+          color: #64748b;
+        }
+
+        .account-readonly-value {
+          font-size: 15px;
+          font-weight: 700;
           color: #0f172a;
           word-break: break-word;
         }
@@ -501,7 +443,7 @@ export default function AccountPage() {
           display: inline-flex;
           align-items: center;
           align-self: flex-start;
-          padding: 5px 10px;
+          padding: 6px 12px;
           border-radius: 999px;
           font-size: 12px;
           font-weight: 700;
@@ -511,34 +453,35 @@ export default function AccountPage() {
         }
 
         .account-form-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 0;
+          display: grid;
+          gap: 16px;
         }
 
         .account-form-grid-2 {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 0 12px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .account-form-group {
-          margin-bottom: 12px;
+          min-width: 0;
+        }
+
+        .account-form-group-full {
+          grid-column: 1 / -1;
         }
 
         .account-form-group label {
           display: block;
-          margin-bottom: 6px;
-          font-size: 13px;
-          font-weight: 800;
+          margin-bottom: 8px;
+          font-size: 14px;
+          font-weight: 600;
           color: #334155;
         }
 
         .account-form-group input {
           width: 100%;
-          height: 46px;
+          height: 48px;
           box-sizing: border-box;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #cbd5e1;
           border-radius: 14px;
           background: #ffffff;
           padding: 0 14px;
@@ -550,42 +493,40 @@ export default function AccountPage() {
 
         .account-form-group input:focus {
           border-color: #2563eb;
-          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
         }
 
         .account-actions {
           display: flex;
           flex-wrap: wrap;
+          align-items: center;
           gap: 10px;
-          margin-bottom: 16px;
-        }
-
-        .account-actions-primary {
-          margin-top: 4px;
-          margin-bottom: 12px;
-        }
-
-        .account-actions-secondary {
-          padding-top: 16px;
-          border-top: 1px solid #f1f5f9;
+          padding-top: 8px;
         }
 
         .account-actions-single {
           flex-direction: column;
+          align-items: stretch;
         }
 
         .account-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: 12px;
-          padding: 11px 18px;
-          font-size: 13px;
-          font-weight: 800;
+          height: 46px;
+          padding: 0 18px;
+          border-radius: 14px;
+          font-size: 14px;
+          font-weight: 700;
           text-decoration: none;
           cursor: pointer;
-          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
-            box-shadow 0.18s ease, opacity 0.18s ease;
+          white-space: nowrap;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            box-shadow 0.15s ease,
+            opacity 0.15s ease;
         }
 
         .account-btn:disabled {
@@ -594,39 +535,43 @@ export default function AccountPage() {
         }
 
         .account-btn-primary {
-          border: 0;
+          border: 1px solid #1d4ed8;
           background: #2563eb;
           color: #ffffff;
-          box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
         }
 
         .account-btn-primary:hover:not(:disabled) {
           background: #1d4ed8;
+          border-color: #1e40af;
         }
 
         .account-btn-neutral {
-          border: 1px solid #e2e8f0;
+          border: 1px solid #cbd5e1;
           background: #ffffff;
-          color: #334155;
+          color: #475569;
         }
 
         .account-btn-neutral:hover {
           background: #f8fafc;
-          border-color: #cbd5e1;
+          border-color: #94a3b8;
+          color: #0f172a;
         }
 
         .account-btn-danger {
-          border: 1px solid #fecaca;
+          border: 1px solid #fca5a5;
           background: #ffffff;
           color: #dc2626;
         }
 
         .account-btn-danger:hover:not(:disabled) {
           background: #fef2f2;
-          border-color: #fca5a5;
+          border-color: #f87171;
+          color: #b91c1c;
         }
 
         .account-links {
+          margin-top: 20px;
           padding-top: 16px;
           border-top: 1px solid #f1f5f9;
         }
@@ -643,22 +588,23 @@ export default function AccountPage() {
           color: #2563eb;
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 720px) {
+          .account-page {
+            padding: 22px 16px 40px;
+          }
+
           .account-card {
-            padding: 24px 20px 22px;
+            padding: 22px 20px 20px;
           }
 
-          .account-title {
-            font-size: 24px;
-          }
-
+          .account-readonly-grid,
           .account-form-grid-2 {
             grid-template-columns: 1fr;
-            gap: 0;
           }
 
           .account-actions {
             flex-direction: column;
+            align-items: stretch;
           }
 
           .account-btn {
