@@ -2,8 +2,9 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { getCurrentUser, signOut } from "@/lib/auth";
+import Link from "next/link";
+import { signOut } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { createCantiere, createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
 import {
@@ -50,8 +51,19 @@ function isMissingAuthSessionMessage(message) {
   return msg.includes("auth session missing") || msg.includes("session missing");
 }
 
+function AuthStatus({ loggedIn }) {
+  if (loggedIn) return null;
+  return (
+    <Link
+      href="/login"
+      className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
+    >
+      Accedi
+    </Link>
+  );
+}
+
 export default function App() {
-  const router = useRouter();
   const [users, setUsers] = useState([]);
   const [user, setUser] = useState({ id: 1, nome: "Demo", cognome: "User", ruolo: "CSE", email: "" });
   const [page, setPage] = useState("dashboard");
@@ -59,12 +71,12 @@ export default function App() {
   const [authUser, setAuthUser] = useState(null);
   useEffect(() => {
     (async () => {
-      let auth = null;
-      try {
-        auth = await getCurrentUser();
-        setAuthUser(auth);
-      } catch {
-        setAuthUser(null);
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = session?.user ?? null;
+      setAuthUser(auth);
+      if (!auth) {
+        setCantieri([]);
+        return;
       }
       try {
         const data = await getCantieriApp();
@@ -78,11 +90,8 @@ export default function App() {
           setCantieri(loadFromStorage(STORAGE_KEYS.cantieri, []));
         }
       }
-      if (!auth) {
-        router.replace("/login");
-      }
     })();
-  }, [router]);
+  }, []);
   
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.cantieri, cantieri);
@@ -264,6 +273,12 @@ export default function App() {
   // ══ DASHBOARD ═════════════════════════════════════════════════════════════
   if (page === "dashboard") return (
     <>
+      {!authUser && (
+        <div className="bg-slate-100 border-b border-slate-200 px-6 py-3 flex items-center justify-center gap-3">
+          <span className="text-sm text-slate-600">Accedi per sincronizzare i cantieri</span>
+          <AuthStatus loggedIn={!!authUser} />
+        </div>
+      )}
       <DashboardPage
         cantieri={cantieri}
         setCantieri={setCantieri}

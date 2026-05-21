@@ -483,7 +483,9 @@ export async function deleteImpresaDb(impresaId) {
 }
 
 function isMissingAuthSession(error) {
-  const msg = (error?.message ?? "").toLowerCase();
+  if (!error) return false;
+  if (error.name === "AuthSessionMissingError") return true;
+  const msg = (error.message ?? "").toLowerCase();
   return msg.includes("auth session missing") || msg.includes("session missing");
 }
 
