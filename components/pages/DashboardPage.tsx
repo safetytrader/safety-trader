@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { STATUS_COLORS } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
 import { updateCantiere, deleteCantiere } from "@/lib/db";
@@ -72,7 +73,7 @@ export function DashboardPage({
   setShowNewCantiere,
   setActiveCantiere,
   setPage,
-  authEmail,
+  authUser,
   onLogout,
 }) {
   const [editCantiere, setEditCantiere] = useState(null);
@@ -132,48 +133,16 @@ export function DashboardPage({
   return (
     <>
       <div className="dash-page">
-        <header className="dash-header">
-          <div className="dash-header-inner">
-            <div className="dash-brand">
-              <div className="dash-brand-mark">ST</div>
-              <div>
-                <div className="dash-brand-title">Safety Trader</div>
-                <div className="dash-brand-sub">D.Lgs. 81/2008</div>
-              </div>
-            </div>
-
-            <div className="dash-header-right">
-              {authEmail && onLogout && (
-                <>
-                  <Link href="/account" className="dash-account-link">
-                    Account
-                  </Link>
-                  <button
-                    type="button"
-                    className="dash-logout"
-                    onClick={onLogout}
-                    title={authEmail}
-                  >
-                    <span className="dash-logout-email">{authEmail}</span>
-                    Logout
-                  </button>
-                </>
-              )}
-              <div className="dash-user">
-                <div className="dash-user-avatar">
-                  {user.nome[0]}
-                  {user.cognome[0]}
-                </div>
-                <div className="dash-user-meta">
-                  <span className="dash-user-name">
-                    {user.nome} {user.cognome}
-                  </span>
-                  <span className="dash-user-role">{user.ruolo}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppHeader
+          user={user}
+          authUser={authUser}
+          onLogout={onLogout}
+          breadcrumb={
+            <span className="app-header-crumb">
+              <span className="app-header-crumb-current">Dashboard</span>
+            </span>
+          }
+        />
 
         <div className="dash-shell">
           <section className="dash-hero">
@@ -372,150 +341,6 @@ export function DashboardPage({
           background: #f8fafc;
           color: #0f172a;
           font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        }
-
-        .dash-header {
-          height: 72px;
-          background: #0f172a;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
-        }
-
-        .dash-header-inner {
-          max-width: 1180px;
-          height: 72px;
-          margin: 0 auto;
-          padding: 0 32px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-
-        .dash-brand {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          min-width: 0;
-        }
-
-        .dash-brand-mark {
-          width: 44px;
-          height: 44px;
-          border-radius: 14px;
-          background: #ffffff;
-          color: #0f172a;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 16px;
-          font-weight: 900;
-          letter-spacing: -0.03em;
-          flex-shrink: 0;
-          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
-        }
-
-        .dash-brand-title {
-          font-size: 15px;
-          font-weight: 800;
-          color: #ffffff;
-          letter-spacing: -0.02em;
-        }
-
-        .dash-brand-sub {
-          margin-top: 2px;
-          font-size: 12px;
-          font-weight: 600;
-          color: #93c5fd;
-        }
-
-        .dash-header-right {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          flex-shrink: 0;
-        }
-
-        .dash-account-link {
-          font-size: 12px;
-          font-weight: 700;
-          color: #93c5fd;
-          text-decoration: none;
-          padding: 8px 4px;
-          transition: color 0.18s ease;
-        }
-
-        .dash-account-link:hover {
-          color: #ffffff;
-          text-decoration: underline;
-          text-underline-offset: 3px;
-        }
-
-        .dash-logout {
-          border: 1px solid #334155;
-          background: transparent;
-          color: #e2e8f0;
-          border-radius: 12px;
-          padding: 8px 14px;
-          font-size: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: background 0.18s ease, border-color 0.18s ease;
-        }
-
-        .dash-logout:hover {
-          background: #1e293b;
-          border-color: #475569;
-          color: #ffffff;
-        }
-
-        .dash-logout-email {
-          display: none;
-          margin-right: 8px;
-          max-width: 180px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          vertical-align: middle;
-        }
-
-        .dash-user {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding-left: 14px;
-          border-left: 1px solid #334155;
-        }
-
-        .dash-user-avatar {
-          width: 36px;
-          height: 36px;
-          border-radius: 999px;
-          background: #2563eb;
-          color: #ffffff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: 800;
-          flex-shrink: 0;
-        }
-
-        .dash-user-meta {
-          display: none;
-          flex-direction: column;
-          line-height: 1.25;
-        }
-
-        .dash-user-name {
-          font-size: 12px;
-          font-weight: 700;
-          color: #f8fafc;
-        }
-
-        .dash-user-role {
-          font-size: 11px;
-          color: #94a3b8;
         }
 
         .dash-shell {
@@ -959,16 +784,6 @@ export function DashboardPage({
           margin-top: 6px;
         }
 
-        @media (min-width: 900px) {
-          .dash-logout-email {
-            display: inline;
-          }
-
-          .dash-user-meta {
-            display: flex;
-          }
-        }
-
         @media (max-width: 1024px) {
           .dash-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -976,7 +791,6 @@ export function DashboardPage({
         }
 
         @media (max-width: 720px) {
-          .dash-header-inner,
           .dash-shell {
             padding-left: 24px;
             padding-right: 24px;
@@ -998,16 +812,9 @@ export function DashboardPage({
             grid-template-columns: 1fr;
           }
 
-          .dash-user-meta {
-            display: none;
-          }
         }
 
         @media (max-width: 560px) {
-          .dash-header-inner {
-            padding: 0 20px;
-          }
-
           .dash-shell {
             padding-left: 20px;
             padding-right: 20px;

@@ -1,8 +1,9 @@
 // @ts-nocheck
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import { createCantiere, createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
@@ -39,7 +40,6 @@ import { Field } from "@/components/ui/Field";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ExportMenu } from "@/components/export/ExportMenu";
-import { AppHeader } from "@/components/layout/AppHeader";
 import { DashboardPage } from "@/components/pages/DashboardPage";
 import { CantierePage } from "@/components/pages/CantierePage";
 import { ImpresaPage } from "@/components/pages/ImpresaPage";
@@ -49,6 +49,45 @@ import { emptyMaestranza, MaestranzaFormFields } from "@/components/impresa/Maes
 function isMissingAuthSessionMessage(message) {
   const msg = (message ?? "").toLowerCase();
   return msg.includes("auth session missing") || msg.includes("session missing");
+}
+
+function headerUserFromAuth(authUser) {
+  if (!authUser) {
+    return {
+      nome: "",
+      cognome: "",
+      ruolo: "",
+      email: "",
+      initials: "ST",
+      displayName: "",
+      displaySub: "",
+    };
+  }
+  const m = authUser.user_metadata || {};
+  const nome = String(m.nome ?? "").trim();
+  const cognome = String(m.cognome ?? "").trim();
+  const societa = String(m.societa ?? "").trim();
+  const email = String(authUser.email ?? "").trim();
+  const fullName = [nome, cognome].filter(Boolean).join(" ");
+  const displayName = fullName || email || "Utente";
+  const displaySub = societa || "";
+
+  let initials = "U";
+  if (nome && cognome) initials = `${nome[0]}${cognome[0]}`.toUpperCase();
+  else if (nome && nome.length >= 2) initials = nome.slice(0, 2).toUpperCase();
+  else if (nome) initials = `${nome[0]}${(cognome[0] || nome[0])}`.toUpperCase();
+  else if (cognome && cognome.length >= 2) initials = cognome.slice(0, 2).toUpperCase();
+  else if (email) initials = `${email[0]}${email[1] || ""}`.toUpperCase();
+
+  return {
+    nome: nome || email.split("@")[0] || "Utente",
+    cognome: cognome || "",
+    ruolo: displaySub,
+    email,
+    initials,
+    displayName,
+    displaySub,
+  };
 }
 
 function AuthStatus({ loggedIn }) {
@@ -64,34 +103,59 @@ function AuthStatus({ loggedIn }) {
 }
 
 export default function App() {
+  const router = useRouter();
   const [users, setUsers] = useState([]);
-  const [user, setUser] = useState({ id: 1, nome: "Demo", cognome: "User", ruolo: "CSE", email: "" });
   const [page, setPage] = useState("dashboard");
   const [cantieri, setCantieri] = useState([]);
   const [authUser, setAuthUser] = useState(null);
+  const headerUser = useMemo(() => headerUserFromAuth(authUser), [authUser]);
+
+  const loadCantieriForUser = useCallback(async auth => {
+    if (!auth) {
+      setCantieri([]);
+      return;
+    }
+    try {
+      const data = await getCantieriApp();
+      setCantieri(data ?? []);
+    } catch (err) {
+      const message = err?.message || String(err);
+      if (isMissingAuthSessionMessage(message)) {
+        setCantieri([]);
+      } else {
+        console.error("Errore caricamento cantieri:", message);
+        setCantieri(loadFromStorage(STORAGE_KEYS.cantieri, []));
+      }
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const auth = session?.user ?? null;
       setAuthUser(auth);
-      if (!auth) {
-        setCantieri([]);
-        return;
-      }
-      try {
-        const data = await getCantieriApp();
-        setCantieri(data ?? []);
-      } catch (err) {
-        const message = err?.message || String(err);
-        if (isMissingAuthSessionMessage(message)) {
-          setCantieri([]);
-        } else {
-          console.error("Errore caricamento cantieri:", message);
-          setCantieri(loadFromStorage(STORAGE_KEYS.cantieri, []));
-        }
-      }
+      await loadCantieriForUser(auth);
     })();
-  }, []);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const auth = session?.user ?? null;
+      setAuthUser(auth);
+      loadCantieriForUser(auth);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadCantieriForUser]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOut();
+    } catch (err) {
+      console.error("Errore logout:", err?.message || err);
+    }
+    setAuthUser(null);
+    setCantieri([]);
+    router.push("/login");
+  }, [router]);
   
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.cantieri, cantieri);
@@ -118,8 +182,6 @@ export default function App() {
       ),
     []
   );
-
-  if (!user) return null;
 
   const getCantiere = id => cantieri.find(c => c.id === id);
   const getImpresa = (cid, iid) => getCantiere(cid)?.imprese.find(i => i.id === iid);
@@ -295,20 +357,13 @@ export default function App() {
       <DashboardPage
         cantieri={cantieri}
         setCantieri={setCantieri}
-        user={user}
+        user={headerUser}
         setNewCantiere={setNewCantiere}
         setShowNewCantiere={setShowNewCantiere}
         setActiveCantiere={setActiveCantiere}
         setPage={setPage}
-        authEmail={authUser?.email}
-        onLogout={async () => {
-          try {
-            await signOut();
-            setAuthUser(null);
-          } catch (err) {
-            console.error("Errore logout:", err?.message || err);
-          }
-        }}
+        authUser={authUser}
+        onLogout={authUser ? handleLogout : null}
       />
       {showNewCantiere && (
         <Modal title="Nuovo cantiere" onClose={() => setShowNewCantiere(false)}>
@@ -341,7 +396,9 @@ export default function App() {
         <CantierePage
           c={c}
           setCantieri={setCantieri}
-          user={user}
+          user={headerUser}
+          authUser={authUser}
+          onLogout={authUser ? handleLogout : null}
           setPage={setPage}
           setShowNewImpresa={setShowNewImpresa}
           setActiveImpresa={setActiveImpresa}
@@ -361,7 +418,9 @@ export default function App() {
         <ImpresaPage
           c={c}
           imp={imp}
-          user={user}
+          user={headerUser}
+          authUser={authUser}
+          onLogout={authUser ? handleLogout : null}
           activeCantiere={activeCantiere}
           activeImpresa={activeImpresa}
           activeTab={activeTab}

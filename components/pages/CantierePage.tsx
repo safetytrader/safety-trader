@@ -4,7 +4,6 @@
 
 import { useState } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
-import { BackButton } from "@/components/ui/BackButton";
 import { CHECKLIST_ITEMS, STATUS_COLORS, BADGE } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
 import { updateImpresaDb, deleteImpresaDb } from "@/lib/db";
@@ -26,6 +25,8 @@ export function CantierePage({
   c,
   setCantieri,
   user,
+  authUser,
+  onLogout,
   setPage,
   setShowNewImpresa,
   setActiveImpresa,
@@ -113,24 +114,24 @@ export function CantierePage({
       <div className="cantiere-page">
         <AppHeader
           user={user}
-          left={<BackButton onClick={() => setPage("dashboard")} label="Dashboard" />}
-          title={c.nome}
-          sub={c.cse}
+          authUser={authUser}
+          onLogout={onLogout}
+          breadcrumb={
+            <span className="app-header-crumb">
+              <button
+                type="button"
+                className="app-header-crumb-link"
+                onClick={() => setPage("dashboard")}
+              >
+                Dashboard
+              </button>
+              <span className="app-header-crumb-sep">/</span>
+              <span className="app-header-crumb-current">{c.nome}</span>
+            </span>
+          }
         />
 
         <div className="cantiere-shell">
-          <nav className="cantiere-breadcrumb" aria-label="Breadcrumb">
-            <button
-              type="button"
-              className="cantiere-crumb-link"
-              onClick={() => setPage("dashboard")}
-            >
-              Dashboard
-            </button>
-            <span className="cantiere-crumb-sep">/</span>
-            <span className="cantiere-crumb-current">{c.nome}</span>
-          </nav>
-
           <button
             type="button"
             className="cantiere-back"
@@ -316,44 +317,6 @@ export function CantierePage({
           max-width: 1180px;
           margin: 0 auto;
           padding: 20px 32px 40px;
-        }
-
-        .cantiere-breadcrumb {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-          font-size: 13px;
-          margin-bottom: 10px;
-        }
-
-        .cantiere-crumb-link {
-          border: 0;
-          background: none;
-          padding: 0;
-          color: #64748b;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: color 0.18s ease;
-        }
-
-        .cantiere-crumb-link:hover {
-          color: #2563eb;
-        }
-
-        .cantiere-crumb-sep {
-          color: #cbd5e1;
-          font-weight: 600;
-        }
-
-        .cantiere-crumb-current {
-          color: #0f172a;
-          font-weight: 800;
-          max-width: 100%;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
 
         .cantiere-back {

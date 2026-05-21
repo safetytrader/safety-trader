@@ -2,13 +2,12 @@
 "use client";
 
 import { AppHeader } from "@/components/layout/AppHeader";
-import { BackButton } from "@/components/ui/BackButton";
 import { ExportMenu } from "@/components/export/ExportMenu";
 import { AllegatiTab } from "@/components/impresa/AllegatiTab";
 import { ChecklistTab } from "@/components/impresa/ChecklistTab";
 import { MaestranzeTab } from "@/components/impresa/MaestranzeTab";
 import { UploadTab } from "@/components/impresa/UploadTab";
-import { BADGE, CHECKLIST_ITEMS } from "@/lib/constants";
+import { CHECKLIST_ITEMS } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
 
 const TABS = [
@@ -18,10 +17,19 @@ const TABS = [
   { id: "upload", label: "Documenti" },
 ];
 
+function statusHeaderClass(st) {
+  if (st === "idoneo") return "app-header-status-idoneo";
+  if (st === "parziale") return "app-header-status-parziale";
+  if (st === "non idoneo") return "app-header-status-non";
+  return "app-header-status-da";
+}
+
 export function ImpresaPage({
   c,
   imp,
   user,
+  authUser,
+  onLogout,
   activeCantiere,
   activeImpresa,
   activeTab,
@@ -47,62 +55,55 @@ export function ImpresaPage({
       <div className="impresa-page">
         <AppHeader
           user={user}
-          left={
-            <BackButton
-              onClick={() => {
-                setShowExport(false);
-                setPage("cantiere");
-              }}
-              label={c.nome}
-            />
+          authUser={authUser}
+          onLogout={onLogout}
+          breadcrumb={
+            <span className="app-header-crumb">
+              <button
+                type="button"
+                className="app-header-crumb-link"
+                onClick={() => {
+                  setShowExport(false);
+                  setPage("dashboard");
+                }}
+              >
+                Dashboard
+              </button>
+              <span className="app-header-crumb-sep">/</span>
+              <button
+                type="button"
+                className="app-header-crumb-link"
+                onClick={() => {
+                  setShowExport(false);
+                  setPage("cantiere");
+                }}
+              >
+                {c.nome}
+              </button>
+              <span className="app-header-crumb-sep">/</span>
+              <span className="app-header-crumb-current">{imp.nome}</span>
+            </span>
           }
-          title={imp.nome}
-          sub={imp.attivita}
-          right={
-            <div className="impresa-header-actions">
-              <span className={`impresa-status-badge ${BADGE[st]}`}>{st}</span>
-              <div className="impresa-export-wrap">
-                <button
-                  type="button"
-                  onClick={() => setShowExport(true)}
-                  className="impresa-export-btn"
-                  aria-expanded={showExport}
-                  aria-haspopup="dialog"
-                >
-                  Esporta
-                </button>
-              </div>
-              {showExport && (
-                <ExportMenu cantiere={c} imp={imp} onClose={() => setShowExport(false)} />
-              )}
-            </div>
+          actions={
+            <>
+              <span className={`app-header-status ${statusHeaderClass(st)}`}>{st}</span>
+              <button
+                type="button"
+                onClick={() => setShowExport(true)}
+                className="app-header-action-btn"
+                aria-expanded={showExport}
+                aria-haspopup="dialog"
+              >
+                Esporta
+              </button>
+            </>
           }
         />
+        {showExport ? (
+          <ExportMenu cantiere={c} imp={imp} onClose={() => setShowExport(false)} />
+        ) : null}
 
         <div className="impresa-shell">
-          <nav className="impresa-breadcrumb" aria-label="Breadcrumb">
-            <button
-              type="button"
-              className="impresa-crumb-link"
-              onClick={() => setPage("dashboard")}
-            >
-              Dashboard
-            </button>
-            <span className="impresa-crumb-sep">/</span>
-            <button
-              type="button"
-              className="impresa-crumb-link"
-              onClick={() => {
-                setShowExport(false);
-                setPage("cantiere");
-              }}
-            >
-              {c.nome}
-            </button>
-            <span className="impresa-crumb-sep">/</span>
-            <span className="impresa-crumb-current">{imp.nome}</span>
-          </nav>
-
           <div className="impresa-nav-actions">
             <button
               type="button"
@@ -221,44 +222,6 @@ export function ImpresaPage({
           padding: 20px 32px 40px;
         }
 
-        .impresa-breadcrumb {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-          font-size: 13px;
-          margin-bottom: 10px;
-        }
-
-        .impresa-crumb-link {
-          border: 0;
-          background: none;
-          padding: 0;
-          color: #64748b;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: color 0.18s ease;
-        }
-
-        .impresa-crumb-link:hover {
-          color: #2563eb;
-        }
-
-        .impresa-crumb-sep {
-          color: #cbd5e1;
-          font-weight: 600;
-        }
-
-        .impresa-crumb-current {
-          color: #0f172a;
-          font-weight: 800;
-          max-width: 100%;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
         .impresa-nav-actions {
           display: flex;
           flex-wrap: wrap;
@@ -286,41 +249,6 @@ export function ImpresaPage({
 
         .impresa-nav-btn-muted {
           color: #64748b;
-        }
-
-        .impresa-header-actions {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .impresa-status-badge {
-          font-size: 10px;
-          font-weight: 800;
-          padding: 5px 10px;
-          border-radius: 999px;
-          text-transform: capitalize;
-        }
-
-        .impresa-export-wrap {
-          position: relative;
-        }
-
-        .impresa-export-btn {
-          border: 1px solid #334155;
-          background: #1e293b;
-          color: #f8fafc;
-          border-radius: 12px;
-          padding: 8px 14px;
-          font-size: 12px;
-          font-weight: 800;
-          cursor: pointer;
-          transition: background 0.18s ease, border-color 0.18s ease;
-        }
-
-        .impresa-export-btn:hover {
-          background: #334155;
-          border-color: #475569;
         }
 
         .impresa-hero {
