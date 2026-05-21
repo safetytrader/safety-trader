@@ -1,69 +1,123 @@
-export async function POST(request: Request) {
-  try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+import {
+  buildFinalUpdates,
+  parseAiJsonResponse,
+} from "@/lib/documentAnalysis";
+import { analyzeDocumentWithOpenAI, mapOpenAiError } from "@/lib/openAiAnalyze";
+import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 
-    if (!apiKey) {
+export const runtime = "nodejs";
+
+type AnalyzeBody = {
+  document_id?: string;
+  storage_path?: string;
+  impresa_id?: string;
+  cantiere_id?: string;
+  file_name?: string;
+  file_type?: string;
+};
+
+async function loadDocumentFile(
+  accessToken: string | null,
+  body: AnalyzeBody
+): Promise<{ base64: string; mimeType: string; fileName: string }> {
+  if (!accessToken) {
+    throw new Error("Sessione non valida. Effettua di nuovo l'accesso.");
+  }
+
+  const supabase = createSupabaseServer(accessToken);
+  let storagePath = body.storage_path || null;
+  let mimeType = body.file_type || "application/pdf";
+  let fileName = body.file_name || "documento.pdf";
+
+  if (body.document_id) {
+    const { data: row, error } = await supabase
+      .from("documents")
+      .select("storage_path, tipo_file, nome_file, impresa_id")
+      .eq("id", body.document_id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!row?.storage_path) {
+      throw new Error("Documento non trovato nello Storage.");
+    }
+
+    if (body.impresa_id && row.impresa_id && String(row.impresa_id) !== String(body.impresa_id)) {
+      throw new Error("Documento non associato a questa impresa.");
+    }
+
+    storagePath = row.storage_path;
+    mimeType = row.tipo_file || mimeType;
+    fileName = row.nome_file || fileName;
+  }
+
+  if (!storagePath) {
+    throw new Error("Riferimento documento mancante. Ricarica il file e riprova.");
+  }
+
+  const { data: blob, error: downloadError } = await supabase.storage
+    .from("documents")
+    .download(storagePath);
+
+  if (downloadError || !blob) {
+    throw new Error("Impossibile scaricare il documento dallo Storage.");
+  }
+
+  const buffer = Buffer.from(await blob.arrayBuffer());
+  if (!buffer.length) {
+    throw new Error("Documento non leggibile dall'AI.");
+  }
+
+  return {
+    base64: buffer.toString("base64"),
+    mimeType: mimeType || blob.type || "application/pdf",
+    fileName,
+  };
+}
+
+export async function POST(request: Request) {
+  const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
+
+  try {
+    if (!hasApiKey) {
       return Response.json(
-        {
-          ok: false,
-          error: "OPENAI_API_KEY mancante",
-        },
+        { ok: false, error: "Chiave OpenAI non configurata." },
         { status: 500 }
       );
     }
 
-    const body = await request.json();
-    const prompt =
-      body?.prompt ||
-      'Rispondi solo con JSON: {"test":true,"messaggio":"ok"}';
+    const body = (await request.json()) as AnalyzeBody;
+    const accessToken = getBearerToken(request);
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        input: prompt,
-      }),
+    const { base64, mimeType, fileName } = await loadDocumentFile(accessToken, body);
+
+    const rawText = await analyzeDocumentWithOpenAI({
+      base64,
+      mimeType,
+      fileName,
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      return Response.json(
-        {
-          ok: false,
-          error: data?.error?.message || "Errore OpenAI",
-          details: data,
-        },
-        { status: response.status }
-      );
-    }
-
-    const text =
-      data.output_text ||
-      data.output
-        ?.flatMap((item: any) => item.content || [])
-        ?.map((content: any) => content.text || "")
-        ?.join("") ||
-      "";
+    const aiPayload = parseAiJsonResponse(rawText);
+    const updates = buildFinalUpdates(aiPayload);
 
     return Response.json({
       ok: true,
-      model,
-      text,
-      raw: data,
+      document_type: aiPayload.document_type,
+      confidence: aiPayload.confidence,
+      summary: aiPayload.summary,
+      extracted_data: aiPayload.extracted_data,
+      updates,
+      warnings: aiPayload.warnings,
     });
-  } catch (error: any) {
-    return Response.json(
-      {
-        ok: false,
-        error: error.message || "Errore API analisi documenti",
-      },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = mapOpenAiError(error, hasApiKey);
+    const status =
+      message === "Chiave OpenAI non configurata." ||
+      message === "Quota OpenAI insufficiente o non disponibile."
+        ? 500
+        : 422;
+
+    return Response.json({ ok: false, error: message }, { status });
   }
 }

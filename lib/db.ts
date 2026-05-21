@@ -300,6 +300,7 @@ export async function replaceMaestranzeImpresa(impresaId, maestranze) {
 
 function rowToDocumentApp(row) {
   return {
+    id: row.id ?? null,
     name: row.nome_file ?? "",
     size: row.dimensione ?? 0,
     type: row.tipo_file ?? "",
@@ -314,7 +315,7 @@ export async function getDocumentsByImpresa(impresaId) {
 
   const { data, error } = await supabase
     .from("documents")
-    .select("nome_file, tipo_file, categoria, storage_path, dimensione, stato_analisi")
+    .select("id, nome_file, tipo_file, categoria, storage_path, dimensione, stato_analisi")
     .eq("impresa_id", impresaId)
     .order("created_at", { ascending: true });
 
@@ -349,9 +350,9 @@ export async function uploadDocumentForImpresa(impresaId, file) {
       categoria: null,
       storage_path: storagePath,
       dimensione: file.size,
-      stato_analisi: "caricato",
+      stato_analisi: "da_analizzare",
     })
-    .select("nome_file, tipo_file, categoria, storage_path, dimensione, stato_analisi")
+    .select("id, nome_file, tipo_file, categoria, storage_path, dimensione, stato_analisi")
     .single();
 
   if (error) {
@@ -359,6 +360,59 @@ export async function uploadDocumentForImpresa(impresaId, file) {
   }
 
   return rowToDocumentApp(data);
+}
+
+export async function updateDocumentStatoAnalisi(documentId, statoAnalisi) {
+  if (documentId == null || documentId === "") return;
+
+  const { error } = await supabase
+    .from("documents")
+    .update({ stato_analisi: statoAnalisi })
+    .eq("id", documentId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function insertDocumentAnalysis(row) {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Utente non autenticato");
+  }
+
+  const payload = {
+    document_id: row.document_id ?? null,
+    impresa_id: row.impresa_id ?? null,
+    cantiere_id: row.cantiere_id ?? null,
+    user_id: user.id,
+    status: row.status ?? "completed",
+    document_type: row.document_type ?? null,
+    confidence: row.confidence ?? null,
+    summary: row.summary ?? null,
+    extracted_data: row.extracted_data ?? {},
+    applied_changes: row.applied_changes ?? {},
+    skipped_changes: row.skipped_changes ?? {},
+    warnings: row.warnings ?? [],
+    error_message: row.error_message ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("document_analysis")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
 }
 
 async function impresaWithChecklist(row) {

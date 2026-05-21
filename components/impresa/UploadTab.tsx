@@ -1,7 +1,9 @@
 // @ts-nocheck
 "use client";
 
+import { Modal } from "@/components/ui/Modal";
 import { BATCH_SIZE } from "@/lib/constants";
+import { AI_STATUS, aiStatusLabel, normalizeAiStatus } from "@/lib/documentAnalysis";
 
 function formatFileType(type) {
   if (!type) return "—";
@@ -17,21 +19,20 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function fileStatusBadge(f, extracting, analyzed) {
-  if (extracting) {
-    return { label: "In analisi", className: "upload-pill upload-pill-analyzing" };
+function fileStatusBadge(f) {
+  const stato = normalizeAiStatus(f.statoAnalisi);
+  const label = aiStatusLabel(stato);
+
+  if (stato === AI_STATUS.IN_CORSO) {
+    return { label, className: "upload-pill upload-pill-analyzing" };
   }
-  const stato = (f.statoAnalisi || "").toLowerCase();
-  if (stato === "analizzato" || analyzed) {
-    return { label: "Analizzato", className: "upload-pill upload-pill-done" };
+  if (stato === AI_STATUS.ANALIZZATO) {
+    return { label, className: "upload-pill upload-pill-done" };
   }
-  if (stato === "caricato") {
-    return { label: "Caricato", className: "upload-pill upload-pill-uploaded" };
+  if (stato === AI_STATUS.ERRORE) {
+    return { label, className: "upload-pill upload-pill-error" };
   }
-  if (stato === "da_analizzare" || stato === "pending") {
-    return { label: "Da analizzare", className: "upload-pill upload-pill-pending" };
-  }
-  return { label: "Da analizzare", className: "upload-pill upload-pill-pending" };
+  return { label, className: "upload-pill upload-pill-pending" };
 }
 
 export function UploadTab({
@@ -41,6 +42,9 @@ export function UploadTab({
   dragOver,
   setDragOver,
   handleFiles,
+  handleAnalyzeDocument,
+  aiAnalysisModal,
+  setAiAnalysisModal,
   fileRef,
   updateImpresa,
 }) {
@@ -134,19 +138,6 @@ export function UploadTab({
               </button>
             </div>
 
-            <div className="upload-ai-notice" role="note">
-              <div className="upload-ai-notice-icon" aria-hidden>
-                ✦
-              </div>
-              <div>
-                <p className="upload-ai-notice-title">Analisi AI non attiva</p>
-                <p className="upload-ai-notice-text">
-                  La funzione di analisi automatica sarà disponibile dopo
-                  l&apos;attivazione del servizio AI.
-                </p>
-              </div>
-            </div>
-
             {(imp.extracting || imp.extractLog?.length > 0) && (
               <div className="upload-log-card">
                 <div className="upload-log-title">Log elaborazione</div>
@@ -227,13 +218,11 @@ export function UploadTab({
                 </div>
                 <div className="upload-files-list">
                   {imp.uploadedFiles.map((f, i) => {
-                    const status = fileStatusBadge(
-                      f,
-                      imp.extracting,
-                      imp.analyzed
-                    );
+                    const status = fileStatusBadge(f);
+                    const analyzing =
+                      normalizeAiStatus(f.statoAnalisi) === AI_STATUS.IN_CORSO;
                     return (
-                      <div key={i} className="upload-file-row">
+                      <div key={f.id || i} className="upload-file-row">
                         <span className="upload-file-type-badge">
                           {formatFileType(f.type)}
                         </span>
@@ -255,7 +244,28 @@ export function UploadTab({
                             ) : null}
                           </div>
                         </div>
-                        <span className={status.className}>{status.label}</span>
+                        <div className="upload-file-actions">
+                          <span className={status.className}>{status.label}</span>
+                          <button
+                            type="button"
+                            className="upload-btn upload-btn-ai"
+                            disabled={
+                              analyzing ||
+                              imp.extracting ||
+                              (!f.id && !f.storagePath)
+                            }
+                            title={
+                              !f.id && !f.storagePath
+                                ? "Documento non ancora salvato nello Storage"
+                                : undefined
+                            }
+                            onClick={() =>
+                              handleAnalyzeDocument(activeCantiere, activeImpresa, i)
+                            }
+                          >
+                            {analyzing ? "Analisi…" : "Analizza con AI"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -265,6 +275,78 @@ export function UploadTab({
           </div>
         </div>
       </div>
+
+      {aiAnalysisModal ? (
+        <Modal
+          title={aiAnalysisModal.error ? "Errore analisi" : "Analisi completata"}
+          onClose={() => setAiAnalysisModal(null)}
+        >
+          <div className="upload-ai-modal">
+            {aiAnalysisModal.error ? (
+              <p className="upload-ai-modal-error">{aiAnalysisModal.summary}</p>
+            ) : (
+              <>
+            <p>
+              <strong>Tipo documento riconosciuto:</strong>{" "}
+              {aiAnalysisModal.document_type || "—"}
+            </p>
+            {aiAnalysisModal.summary ? (
+              <p className="upload-ai-modal-muted">{aiAnalysisModal.summary}</p>
+            ) : null}
+            {aiAnalysisModal.extracted_data &&
+            Object.keys(aiAnalysisModal.extracted_data).length > 0 ? (
+              <div>
+                <p className="upload-ai-modal-section">Dati estratti principali</p>
+                <ul className="upload-ai-modal-list">
+                  {Object.entries(aiAnalysisModal.extracted_data).map(([k, v]) => (
+                    <li key={k}>
+                      {k}: {String(v)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {aiAnalysisModal.applied_lines?.length > 0 ? (
+              <div>
+                <p className="upload-ai-modal-section">Aggiornamenti applicati</p>
+                <ul className="upload-ai-modal-list">
+                  {aiAnalysisModal.applied_lines.map((line, idx) => (
+                    <li key={idx}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {aiAnalysisModal.skipped_lines?.length > 0 ? (
+              <div>
+                <p className="upload-ai-modal-section">
+                  Dati non aggiornati (già presenti)
+                </p>
+                <ul className="upload-ai-modal-list upload-ai-modal-list-muted">
+                  {aiAnalysisModal.skipped_lines.map((line, idx) => (
+                    <li key={idx}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {aiAnalysisModal.warnings?.length > 0 ? (
+              <ul className="upload-ai-modal-list upload-ai-modal-list-muted">
+                {aiAnalysisModal.warnings.map((w, idx) => (
+                  <li key={idx}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+              </>
+            )}
+            <button
+              type="button"
+              className="upload-btn upload-btn-primary upload-ai-modal-close"
+              onClick={() => setAiAnalysisModal(null)}
+            >
+              Chiudi
+            </button>
+          </div>
+        </Modal>
+      ) : null}
 
       <style jsx>{`
         .upload-root {
@@ -736,6 +818,80 @@ export function UploadTab({
           border: 1px solid #a7f3d0;
         }
 
+        .upload-pill-error {
+          background: #fef2f2;
+          color: #b91c1c;
+          border: 1px solid #fecaca;
+        }
+
+        .upload-file-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+
+        .upload-btn-ai {
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+          white-space: nowrap;
+        }
+
+        .upload-btn-ai:hover:not(:disabled) {
+          background: #dbeafe;
+          border-color: #93c5fd;
+        }
+
+        .upload-ai-modal {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          font-size: 14px;
+          line-height: 1.5;
+          color: #334155;
+        }
+
+        .upload-ai-modal-muted {
+          margin: 0;
+          color: #64748b;
+          font-size: 13px;
+        }
+
+        .upload-ai-modal-error {
+          margin: 0;
+          color: #b91c1c;
+          font-size: 14px;
+          line-height: 1.5;
+          font-weight: 600;
+        }
+
+        .upload-ai-modal-section {
+          margin: 0 0 6px;
+          font-size: 12px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #64748b;
+        }
+
+        .upload-ai-modal-list {
+          margin: 0;
+          padding-left: 18px;
+          font-size: 13px;
+          color: #334155;
+        }
+
+        .upload-ai-modal-list-muted {
+          color: #64748b;
+        }
+
+        .upload-ai-modal-close {
+          align-self: flex-start;
+          margin-top: 4px;
+        }
+
         @media (max-width: 720px) {
           .upload-header {
             flex-direction: column;
@@ -760,9 +916,18 @@ export function UploadTab({
             align-items: flex-start;
           }
 
+          .upload-file-actions {
+            width: 100%;
+            align-items: stretch;
+          }
+
           .upload-pill {
             width: 100%;
             justify-content: center;
+          }
+
+          .upload-btn-ai {
+            width: 100%;
           }
 
           .upload-files-head {

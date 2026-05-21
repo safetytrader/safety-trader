@@ -40,6 +40,9 @@ export function ImpresaPage({
   setShowAddMaestra,
   updateImpresa,
   handleFiles,
+  handleAnalyzeDocument,
+  aiAnalysisModal,
+  setAiAnalysisModal,
   dragOver,
   setDragOver,
   fileRef,
@@ -169,6 +172,9 @@ export function ImpresaPage({
                   dragOver={dragOver}
                   setDragOver={setDragOver}
                   handleFiles={handleFiles}
+                  handleAnalyzeDocument={handleAnalyzeDocument}
+                  aiAnalysisModal={aiAnalysisModal}
+                  setAiAnalysisModal={setAiAnalysisModal}
                   fileRef={fileRef}
                   updateImpresa={updateImpresa}
                 />

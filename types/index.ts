@@ -6,9 +6,13 @@
 
 /** File caricato in tab upload; in memoria può includere il riferimento al `File` originale. */
 export type UploadedFile = {
+  id?: string | null;
   name: string;
   size: number;
   type: string;
+  storagePath?: string;
+  categoria?: string | null;
+  statoAnalisi?: string;
   /** Presente solo in sessione, prima del salvataggio JSON su localStorage */
   _file?: File;
 };

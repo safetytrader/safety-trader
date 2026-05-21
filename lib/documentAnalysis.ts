@@ -1,0 +1,544 @@
+// @ts-nocheck
+import { ALLEGATI_CONFIG } from "@/lib/constants";
+import { deduplicateWorkers, nameSimilarity } from "@/lib/utils";
+
+/** Chiavi allegati nel DB app (testo completo) */
+export const ALLEGATI_KEY_MAP = {
+  durc: "D.U.R.C.",
+  visura: "Visura Camerale (CC.I.AA.)",
+  pos: null,
+};
+
+export const AI_STATUS = {
+  DA_ANALIZZARE: "da_analizzare",
+  IN_CORSO: "analisi_in_corso",
+  ANALIZZATO: "analizzato",
+  ERRORE: "errore_analisi",
+};
+
+export const AI_STATUS_LABELS = {
+  [AI_STATUS.DA_ANALIZZARE]: "Da analizzare",
+  [AI_STATUS.IN_CORSO]: "Analisi in corso",
+  [AI_STATUS.ANALIZZATO]: "Analizzato",
+  [AI_STATUS.ERRORE]: "Errore analisi",
+  caricato: "Da analizzare",
+};
+
+export function aiStatusLabel(stato) {
+  const key = (stato || "").toLowerCase();
+  return AI_STATUS_LABELS[key] || AI_STATUS_LABELS[AI_STATUS.DA_ANALIZZARE];
+}
+
+export function normalizeAiStatus(stato) {
+  const key = (stato || "").toLowerCase();
+  if (key === "pending" || key === "caricato" || !key) return AI_STATUS.DA_ANALIZZARE;
+  if (key === "analisi_in_corso" || key === "in_corso") return AI_STATUS.IN_CORSO;
+  if (key === "analizzato") return AI_STATUS.ANALIZZATO;
+  if (key === "errore" || key === "errore_analisi") return AI_STATUS.ERRORE;
+  return key;
+}
+
+export function isFieldEmpty(value) {
+  if (value == null) return true;
+  if (typeof value === "boolean") return value === false;
+  if (typeof value === "string") {
+    const t = value.trim();
+    return t === "" || t === "—";
+  }
+  return false;
+}
+
+export function isChecklistEmpty(value) {
+  if (value == null) return true;
+  const t = String(value).trim().toLowerCase();
+  return t === "" || t === "n.a." || t === "na" || t === "n/a";
+}
+
+/** Converte YYYY-MM-DD in dd/mm/yy per l'app */
+export function formatIsoDateToApp(iso) {
+  if (!iso || typeof iso !== "string") return null;
+  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1].slice(-2)}`;
+}
+
+export function parseAiJsonResponse(text) {
+  let s = String(text || "")
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+  const st = s.indexOf("{");
+  if (st === -1) throw new Error("Documento non leggibile dall'AI.");
+  let depth = 0;
+  let end = -1;
+  for (let i = st; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) {
+    s = s.slice(st).replace(/,\s*$/, "");
+    const ob = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+    for (let i = 0; i < ob; i++) s += "}";
+  } else {
+    s = s.slice(st, end + 1);
+  }
+  const parsed = JSON.parse(s);
+  return normalizeAiPayload(parsed);
+}
+
+function normalizeAiPayload(raw) {
+  return {
+    document_type: raw?.document_type || "ALTRO",
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
+    summary: raw?.summary || "",
+    extracted_data: {
+      impresa: raw?.extracted_data?.impresa ?? null,
+      lavoratore: raw?.extracted_data?.lavoratore ?? null,
+      codice_fiscale: raw?.extracted_data?.codice_fiscale ?? null,
+      mansione: raw?.extracted_data?.mansione ?? null,
+      data_emissione: raw?.extracted_data?.data_emissione ?? null,
+      data_erogazione: raw?.extracted_data?.data_erogazione ?? null,
+      data_scadenza: raw?.extracted_data?.data_scadenza ?? null,
+      data_fine_contratto: raw?.extracted_data?.data_fine_contratto ?? null,
+      ente: raw?.extracted_data?.ente ?? null,
+      corso: raw?.extracted_data?.corso ?? null,
+    },
+    updates: {
+      checklist: raw?.updates?.checklist || {},
+      allegati: raw?.updates?.allegati || {},
+      allegatiScadenze: raw?.updates?.allegatiScadenze || {},
+      maestranze: Array.isArray(raw?.updates?.maestranze) ? raw.updates.maestranze : [],
+    },
+    warnings: Array.isArray(raw?.warnings) ? raw.warnings : [],
+  };
+}
+
+function workerFromExtracted(extracted, fields = {}) {
+  const nome = (extracted.lavoratore || "").trim();
+  if (!nome) return null;
+  const w = { nome, ...fields };
+  const mansione = (extracted.mansione || extracted.corso || "").trim();
+  if (mansione) w.qualifica = mansione;
+  return w;
+}
+
+/**
+ * Mapping deterministico da tipo documento + extracted_data → updates
+ */
+export function mapExtractedToUpdates(documentType, extracted = {}) {
+  const type = (documentType || "ALTRO").toUpperCase();
+  const updates = {
+    checklist: {},
+    allegati: {},
+    allegatiScadenze: {},
+    maestranze: [],
+  };
+
+  const scadenza = formatIsoDateToApp(extracted.data_scadenza);
+  const erogazione = formatIsoDateToApp(extracted.data_erogazione || extracted.data_emissione);
+  const fineContratto = formatIsoDateToApp(extracted.data_fine_contratto);
+
+  switch (type) {
+    case "DURC":
+      updates.checklist.durc = "si";
+      updates.allegati.durc = true;
+      if (scadenza) updates.allegatiScadenze.durc = scadenza;
+      break;
+    case "POS":
+      updates.checklist.pos = "si";
+      if (resolveAllegatoKey("pos")) updates.allegati.pos = true;
+      break;
+    case "VISURA":
+      updates.checklist.visura = "si";
+      updates.allegati.visura = true;
+      if (scadenza) updates.allegatiScadenze.visura = scadenza;
+      break;
+    case "FORMAZIONE_BASE": {
+      const w = workerFromExtracted(extracted, { formazioneBase: true });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "FORMAZIONE_SPECIFICA": {
+      const w = workerFromExtracted(extracted, { formazioneSpec: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "IDONEITA": {
+      const idoneita = scadenza || formatIsoDateToApp(extracted.data_emissione);
+      const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {});
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "UNILAV": {
+      const unilav = fineContratto || (extracted.data_fine_contratto == null ? "IND" : null);
+      const w = workerFromExtracted(extracted, unilav ? { unilav } : { unilav: "IND" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "PREPOSTO": {
+      const w = workerFromExtracted(extracted, { preposto: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "ANTINCENDIO": {
+      const w = workerFromExtracted(extracted, { antincendio: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "PRIMO_SOCCORSO": {
+      const w = workerFromExtracted(extracted, { ps: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "PONTEGGI": {
+      const w = workerFromExtracted(extracted, { ponteggiatori: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "MMT": {
+      const w = workerFromExtracted(extracted, { mdt: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "PLE": {
+      const w = workerFromExtracted(extracted, { ple: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "GRU": {
+      const w = workerFromExtracted(extracted, { gruista: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    case "SPAZI_CONFINATI": {
+      const w = workerFromExtracted(extracted, { confinati: erogazione || "✓" });
+      if (w) updates.maestranze.push(w);
+      break;
+    }
+    default:
+      break;
+  }
+
+  return updates;
+}
+
+export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
+  const maestranze = [
+    ...(Array.isArray(mappedUpdates.maestranze) ? mappedUpdates.maestranze : []),
+    ...(Array.isArray(aiUpdates.maestranze) ? aiUpdates.maestranze : []),
+  ];
+
+  return {
+    checklist: { ...mappedUpdates.checklist, ...aiUpdates.checklist },
+    allegati: { ...mappedUpdates.allegati, ...aiUpdates.allegati },
+    allegatiScadenze: { ...mappedUpdates.allegatiScadenze, ...aiUpdates.allegatiScadenze },
+    maestranze: deduplicateWorkers([], maestranze),
+  };
+}
+
+export function buildFinalUpdates(aiPayload) {
+  const mapped = mapExtractedToUpdates(
+    aiPayload.document_type,
+    aiPayload.extracted_data || {}
+  );
+  return mergeAiUpdates(aiPayload.updates || {}, mapped);
+}
+
+export function detectDocumentType(fileName = "") {
+  const n = fileName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (n.includes("durc")) return "DURC";
+  if (n.includes("visura") || n.includes("cciaa") || n.includes("camera")) return "VISURA";
+  if (n.includes("pos") || n.includes("piano operativo")) return "POS";
+  if (n.includes("unilav")) return "UNILAV";
+  if (n.includes("idoneit")) return "IDONEITA";
+  if (n.includes("formazione") && (n.includes("specif") || n.includes("rischio"))) return "FORMAZIONE_SPECIFICA";
+  if (n.includes("formazione") || n.includes("81-08") || n.includes("8108")) return "FORMAZIONE_BASE";
+  if (n.includes("preposto")) return "PREPOSTO";
+  if (n.includes("antincendio")) return "ANTINCENDIO";
+  if (n.includes("soccorso") || n.includes("primo soccorso") || /\bps\b/.test(n)) return "PRIMO_SOCCORSO";
+  if (n.includes("pontegg")) return "PONTEGGI";
+  if (n.includes("mmt") || n.includes("mdt")) return "MMT";
+  if (n.includes("ple")) return "PLE";
+  if (n.includes("gru")) return "GRU";
+  if (n.includes("confinat") || n.includes("spazi")) return "SPAZI_CONFINATI";
+  return "UNKNOWN";
+}
+
+function addDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+}
+
+function resolveAllegatoKey(key) {
+  if (!key) return null;
+  if (ALLEGATI_KEY_MAP[key]) return ALLEGATI_KEY_MAP[key];
+  const found = ALLEGATI_CONFIG.find(a => a.key === key);
+  if (found) return found.key;
+  const lower = key.toLowerCase();
+  const byAlias = ALLEGATI_CONFIG.find(
+    a => a.key.toLowerCase() === lower || a.sinonimi?.toLowerCase().includes(lower)
+  );
+  return byAlias?.key || null;
+}
+
+/**
+ * Mock controllato: struttura definitiva senza OpenAI.
+ */
+export function buildMockAnalysis({ fileName, documentType, extractedOverrides = {} }) {
+  const type = documentType && documentType !== "UNKNOWN" ? documentType : detectDocumentType(fileName);
+  const scadenza = addDays(120);
+  const oggi = addDays(0);
+  const updates = {
+    checklist: {},
+    allegati: {},
+    allegatiScadenze: {},
+    maestranze: [],
+  };
+  const extracted_data = {
+    file_name: fileName,
+    document_type: type,
+    ...extractedOverrides,
+  };
+  const warnings = [];
+
+  switch (type) {
+    case "DURC":
+      updates.checklist.durc = "si";
+      updates.allegati.durc = true;
+      updates.allegatiScadenze.durc = scadenza;
+      extracted_data.data_scadenza = scadenza;
+      break;
+    case "POS":
+      updates.checklist.pos = "si";
+      if (resolveAllegatoKey("pos")) updates.allegati.pos = true;
+      break;
+    case "VISURA":
+      updates.checklist.visura = "si";
+      updates.allegati.visura = true;
+      updates.allegatiScadenze.visura = addDays(180);
+      extracted_data.data_scadenza = updates.allegatiScadenze.visura;
+      break;
+    case "FORMAZIONE_BASE":
+      updates.maestranze.push({
+        nome: extractedOverrides.nome || "Lavoratore Estratto",
+        formazioneBase: true,
+      });
+      break;
+    case "FORMAZIONE_SPECIFICA":
+      updates.maestranze.push({
+        nome: extractedOverrides.nome || "Lavoratore Estratto",
+        formazioneSpec: oggi,
+      });
+      break;
+    case "IDONEITA":
+      updates.maestranze.push({
+        nome: extractedOverrides.nome || "Lavoratore Estratto",
+        idoneita: scadenza,
+      });
+      extracted_data.data_scadenza = scadenza;
+      break;
+    case "UNILAV":
+      updates.maestranze.push({
+        nome: extractedOverrides.nome || "Lavoratore Estratto",
+        unilav: extractedOverrides.unilav || "IND",
+      });
+      break;
+    case "PREPOSTO":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", preposto: oggi });
+      break;
+    case "ANTINCENDIO":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", antincendio: oggi });
+      break;
+    case "PRIMO_SOCCORSO":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", ps: oggi });
+      break;
+    case "PONTEGGI":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", ponteggiatori: oggi });
+      break;
+    case "MMT":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", mdt: oggi });
+      break;
+    case "PLE":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", ple: oggi });
+      break;
+    case "GRU":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", gruista: oggi });
+      break;
+    case "SPAZI_CONFINATI":
+      updates.maestranze.push({ nome: extractedOverrides.nome || "Lavoratore Estratto", confinati: oggi });
+      break;
+    default:
+      warnings.push("Tipo documento non riconosciuto automaticamente; verifica i dati applicati.");
+      break;
+  }
+
+  return {
+    document_type: type,
+    confidence: type === "UNKNOWN" ? 0.35 : 0.88,
+    summary:
+      type === "UNKNOWN"
+        ? "Analisi mock completata. Tipo documento non classificato dal nome file."
+        : `Analisi mock completata per documento ${type}.`,
+    extracted_data,
+    updates,
+    warnings,
+  };
+}
+
+function recordApplied(applied, section, key, value) {
+  if (!applied[section]) applied[section] = {};
+  applied[section][key] = value;
+}
+
+function recordSkipped(skipped, section, key, existing, proposed) {
+  if (!skipped[section]) skipped[section] = {};
+  skipped[section][key] = { existing, proposed };
+}
+
+/**
+ * Applica aggiornamenti AI senza sovrascrivere campi già compilati.
+ */
+export function applyAiUpdates(current = {}, updates = {}) {
+  const checks = { ...(current.checks || {}) };
+  const allegati = { ...(current.allegati || {}) };
+  const allegatiScadenze = { ...(current.allegatiScadenze || {}) };
+  let maestranze = [...(current.maestranze || [])];
+
+  const applied_changes = {};
+  const skipped_changes = {};
+
+  for (const [key, value] of Object.entries(updates.checklist || {})) {
+    if (value == null || value === "") continue;
+    if (isChecklistEmpty(checks[key])) {
+      checks[key] = value;
+      recordApplied(applied_changes, "checklist", key, value);
+    } else {
+      recordSkipped(skipped_changes, "checklist", key, checks[key], value);
+    }
+  }
+
+  for (const [rawKey, value] of Object.entries(updates.allegati || {})) {
+    if (!value) continue;
+    const key = resolveAllegatoKey(rawKey) || rawKey;
+    if (!key) continue;
+    if (isFieldEmpty(allegati[key])) {
+      allegati[key] = true;
+      recordApplied(applied_changes, "allegati", key, true);
+    } else {
+      recordSkipped(skipped_changes, "allegati", key, allegati[key], true);
+    }
+  }
+
+  for (const [rawKey, value] of Object.entries(updates.allegatiScadenze || {})) {
+    if (isFieldEmpty(value)) continue;
+    const key = resolveAllegatoKey(rawKey) || rawKey;
+    if (!key) continue;
+    if (isFieldEmpty(allegatiScadenze[key])) {
+      allegatiScadenze[key] = value;
+      recordApplied(applied_changes, "allegatiScadenze", key, value);
+    } else {
+      recordSkipped(skipped_changes, "allegatiScadenze", key, allegatiScadenze[key], value);
+    }
+  }
+
+  for (const incoming of updates.maestranze || []) {
+    if (!incoming?.nome?.trim()) continue;
+    const idx = maestranze.findIndex(m => nameSimilarity(m.nome, incoming.nome) >= 0.75);
+    if (idx >= 0) {
+      const existing = { ...maestranze[idx] };
+      const merged = { ...existing };
+      const workerApplied = {};
+      const workerSkipped = {};
+      for (const [field, value] of Object.entries(incoming)) {
+        if (field === "nome") continue;
+        if (isFieldEmpty(value)) continue;
+        if (field === "qualifica" && !isFieldEmpty(existing.qualifica)) {
+          workerSkipped[field] = { existing: existing.qualifica, proposed: value };
+          continue;
+        }
+        if (isFieldEmpty(existing[field])) {
+          merged[field] = value;
+          workerApplied[field] = value;
+        } else {
+          workerSkipped[field] = { existing: existing[field], proposed: value };
+        }
+      }
+      const mansione = (incoming.qualifica || "").trim();
+      if (mansione && isFieldEmpty(existing.qualifica) && isFieldEmpty(merged.qualifica)) {
+        merged.qualifica = mansione;
+        workerApplied.qualifica = mansione;
+      }
+      maestranze[idx] = merged;
+      if (Object.keys(workerApplied).length) {
+        if (!applied_changes.maestranze) applied_changes.maestranze = [];
+        applied_changes.maestranze.push({ nome: existing.nome, fields: workerApplied });
+      }
+      if (Object.keys(workerSkipped).length) {
+        if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
+        skipped_changes.maestranze.push({ nome: existing.nome, fields: workerSkipped });
+      }
+    } else {
+      const nuova = { ...incoming };
+      const mansione = (incoming.qualifica || "").trim();
+      if (mansione && isFieldEmpty(nuova.qualifica)) nuova.qualifica = mansione;
+      maestranze.push(nuova);
+      if (!applied_changes.maestranze) applied_changes.maestranze = [];
+      applied_changes.maestranze.push({ nome: nuova.nome, created: true, fields: { ...nuova } });
+    }
+  }
+
+  return {
+    checks,
+    allegati,
+    allegatiScadenze,
+    maestranze,
+    applied_changes,
+    skipped_changes,
+  };
+}
+
+export function formatAppliedSummary(applied_changes = {}) {
+  const lines = [];
+  for (const [k, v] of Object.entries(applied_changes.checklist || {})) {
+    lines.push(`Checklist: ${k} → ${v}`);
+  }
+  for (const [k] of Object.entries(applied_changes.allegati || {})) {
+    lines.push(`Allegato presente: ${k}`);
+  }
+  for (const [k, v] of Object.entries(applied_changes.allegatiScadenze || {})) {
+    lines.push(`Scadenza allegato ${k}: ${v}`);
+  }
+  for (const m of applied_changes.maestranze || []) {
+    if (m.created) lines.push(`Nuova maestranza: ${m.nome}`);
+    else lines.push(`Maestranza aggiornata: ${m.nome}`);
+  }
+  return lines;
+}
+
+export function formatSkippedSummary(skipped_changes = {}) {
+  const lines = [];
+  for (const [k, v] of Object.entries(skipped_changes.checklist || {})) {
+    lines.push(`Checklist ${k}: già "${v.existing}"`);
+  }
+  for (const [k, v] of Object.entries(skipped_changes.allegati || {})) {
+    lines.push(`Allegato ${k}: già presente`);
+  }
+  for (const [k, v] of Object.entries(skipped_changes.allegatiScadenze || {})) {
+    lines.push(`Scadenza ${k}: già "${v.existing}"`);
+  }
+  for (const m of skipped_changes.maestranze || []) {
+    const fields = Object.keys(m.fields || {}).join(", ");
+    lines.push(`Maestranza ${m.nome}: campi già compilati (${fields})`);
+  }
+  return lines;
+}

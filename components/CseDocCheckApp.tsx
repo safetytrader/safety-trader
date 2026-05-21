@@ -5,7 +5,22 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
-import { getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
+import {
+  getCantieriApp,
+  replaceMaestranzeImpresa,
+  uploadDocumentForImpresa,
+  insertDocumentAnalysis,
+  updateDocumentStatoAnalisi,
+  upsertChecklistImpresa,
+  upsertAllegatiImpresa,
+} from "@/lib/db";
+import {
+  applyAiUpdates,
+  AI_STATUS,
+  detectDocumentType,
+  formatAppliedSummary,
+  formatSkippedSummary,
+} from "@/lib/documentAnalysis";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
 import {
   CHECKLIST_ITEMS,
@@ -167,6 +182,7 @@ export default function App() {
   const [newMaestranza, setNewMaestranza] = useState(emptyMaestranza());
   const [dragOver, setDragOver] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [aiAnalysisModal, setAiAnalysisModal] = useState(null);
   const fileRef = useRef();
 
   const updateImpresa = useCallback(
@@ -328,6 +344,141 @@ export default function App() {
     extractAll(cid, iid, filesForExtract, uploadedFilesOverride);
   }, [cantieri]);
 
+  const handleAnalyzeDocument = useCallback(
+    async (cid, iid, fileIndex) => {
+      const imp = getImpresa(cid, iid);
+      if (!imp?.uploadedFiles?.[fileIndex]) return;
+
+      const file = imp.uploadedFiles[fileIndex];
+      const files = [...imp.uploadedFiles];
+      files[fileIndex] = { ...file, statoAnalisi: AI_STATUS.IN_CORSO };
+      updateImpresa(cid, iid, { uploadedFiles: files });
+
+      if (file.id) {
+        updateDocumentStatoAnalisi(file.id, AI_STATUS.IN_CORSO).catch(err =>
+          console.error("Errore aggiornamento stato documento:", err?.message || err)
+        );
+      }
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const res = await fetch("/api/analyze-documents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            document_id: file.id ?? null,
+            storage_path: file.storagePath ?? null,
+            impresa_id: iid,
+            cantiere_id: cid,
+            file_name: file.name,
+            file_type: file.type,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Analisi non riuscita");
+        }
+
+        const applied = applyAiUpdates(
+          {
+            checks: imp.checks || {},
+            allegati: imp.allegati || {},
+            allegatiScadenze: imp.allegatiScadenze || {},
+            maestranze: imp.maestranze || [],
+          },
+          data.updates || {}
+        );
+
+        const filesOk = [...(getImpresa(cid, iid)?.uploadedFiles || files)];
+        filesOk[fileIndex] = { ...filesOk[fileIndex], statoAnalisi: AI_STATUS.ANALIZZATO };
+        updateImpresa(cid, iid, {
+          uploadedFiles: filesOk,
+          checks: applied.checks,
+          allegati: applied.allegati,
+          allegatiScadenze: applied.allegatiScadenze,
+          maestranze: applied.maestranze,
+        });
+
+        if (file.id) {
+          updateDocumentStatoAnalisi(file.id, AI_STATUS.ANALIZZATO).catch(err =>
+            console.error("Errore aggiornamento stato documento:", err?.message || err)
+          );
+        }
+
+        upsertChecklistImpresa(iid, applied.checks, imp.note || "").catch(err =>
+          console.error("Errore salvataggio checklist:", err?.message || err)
+        );
+        upsertAllegatiImpresa(iid, applied.allegati, applied.allegatiScadenze).catch(err =>
+          console.error("Errore salvataggio allegati:", err?.message || err)
+        );
+        replaceMaestranzeImpresa(iid, applied.maestranze).catch(err =>
+          console.error("Errore salvataggio maestranze:", err?.message || err)
+        );
+
+        insertDocumentAnalysis({
+          document_id: file.id ?? null,
+          impresa_id: iid,
+          cantiere_id: cid,
+          status: "completed",
+          document_type: data.document_type,
+          confidence: data.confidence,
+          summary: data.summary,
+          extracted_data: data.extracted_data,
+          applied_changes: applied.applied_changes,
+          skipped_changes: applied.skipped_changes,
+          warnings: data.warnings,
+        }).catch(err => console.error("Errore salvataggio analisi:", err?.message || err));
+
+        setAiAnalysisModal({
+          document_type: data.document_type,
+          summary: data.summary,
+          extracted_data: data.extracted_data,
+          applied_lines: formatAppliedSummary(applied.applied_changes),
+          skipped_lines: formatSkippedSummary(applied.skipped_changes),
+          warnings: data.warnings || [],
+        });
+      } catch (err) {
+        const filesErr = [...(getImpresa(cid, iid)?.uploadedFiles || files)];
+        filesErr[fileIndex] = { ...filesErr[fileIndex], statoAnalisi: AI_STATUS.ERRORE };
+        updateImpresa(cid, iid, { uploadedFiles: filesErr });
+
+        if (file.id) {
+          updateDocumentStatoAnalisi(file.id, AI_STATUS.ERRORE).catch(e =>
+            console.error("Errore aggiornamento stato documento:", e?.message || e)
+          );
+        }
+
+        insertDocumentAnalysis({
+          document_id: file.id ?? null,
+          impresa_id: iid,
+          cantiere_id: cid,
+          status: "failed",
+          document_type: detectDocumentType(file.name),
+          error_message: err?.message || "Errore analisi",
+        }).catch(e => console.error("Errore salvataggio analisi:", e?.message || e));
+
+        setAiAnalysisModal({
+          error: true,
+          document_type: detectDocumentType(file.name),
+          summary: err?.message || "Errore analisi",
+          applied_lines: [],
+          skipped_lines: [],
+          warnings: [],
+        });
+      }
+    },
+    [cantieri, updateImpresa]
+  );
+
   if (!authChecked) {
     return (
       <div
@@ -413,6 +564,9 @@ export default function App() {
           setShowAddMaestra={setShowAddMaestra}
           updateImpresa={updateImpresa}
           handleFiles={handleFiles}
+          handleAnalyzeDocument={handleAnalyzeDocument}
+          aiAnalysisModal={aiAnalysisModal}
+          setAiAnalysisModal={setAiAnalysisModal}
           dragOver={dragOver}
           setDragOver={setDragOver}
           fileRef={fileRef}
