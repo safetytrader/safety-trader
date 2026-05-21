@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CHECKLIST_ITEMS, STATUS_COLORS, BADGE } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
 import { createImpresa, updateImpresaDb, deleteImpresaDb } from "@/lib/db";
@@ -99,6 +100,7 @@ export function CantierePage({
   setActiveImpresa,
   setActiveTab,
 }) {
+  const [deleteImpresaTarget, setDeleteImpresaTarget] = useState(null);
   const [editImpresa, setEditImpresa] = useState(null);
   const [editForm, setEditForm] = useState({ nome: "", attivita: "" });
 
@@ -110,9 +112,14 @@ export function CantierePage({
     setEditForm({ nome: imp.nome, attivita: imp.attivita });
   };
 
-  const handleDelete = async (imp, e) => {
+  const requestDeleteImpresa = (imp, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Eliminare l'impresa "${imp.nome}"?`)) return;
+    setDeleteImpresaTarget(imp);
+  };
+
+  const confirmDeleteImpresa = async () => {
+    if (!deleteImpresaTarget) return;
+    const imp = deleteImpresaTarget;
     try {
       await deleteImpresaDb(imp.id);
       setCantieri(p =>
@@ -132,6 +139,7 @@ export function CantierePage({
         )
       );
     }
+    setDeleteImpresaTarget(null);
   };
 
   const handleSaveEdit = async () => {
@@ -352,7 +360,7 @@ export function CantierePage({
                       <button
                         type="button"
                         className="cantiere-btn-danger"
-                        onClick={e => handleDelete(imp, e)}
+                        onClick={e => requestDeleteImpresa(imp, e)}
                       >
                         Elimina
                       </button>
@@ -364,6 +372,17 @@ export function CantierePage({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteImpresaTarget}
+        title="Eliminare l'impresa?"
+        message="L'eliminazione rimuoverà l'impresa, checklist, allegati, maestranze e documenti collegati. L'operazione non può essere annullata."
+        confirmLabel="Elimina impresa"
+        cancelLabel="Annulla"
+        variant="danger"
+        onConfirm={confirmDeleteImpresa}
+        onCancel={() => setDeleteImpresaTarget(null)}
+      />
 
       {isNewImpresaOpen ? (
         <ImpresaFormModal

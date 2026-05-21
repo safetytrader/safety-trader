@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { replaceMaestranzeImpresa } from "@/lib/db";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { calcScadenza, isExpired, isExpiringSoon } from "@/lib/utils";
 
 const OPTIONAL_COLS = [
@@ -269,6 +270,7 @@ export function MaestranzeTab({
   dc,
 }) {
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState(emptyMaestranza());
   const [showEditModal, setShowEditModal] = useState(false);
@@ -326,11 +328,15 @@ export function MaestranzeTab({
     setShowEditModal(false);
   };
 
-  const handleDeleteSelected = () => {
+  const requestDeleteSelected = () => {
     if (selectedIndex === null) return;
-    const m = imp.maestranze[selectedIndex];
-    if (!window.confirm(`Eliminare la maestranza "${m.nome || "selezionata"}"?`)) return;
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteSelected = () => {
+    if (selectedIndex === null) return;
     removeAtIndex(selectedIndex);
+    setDeleteConfirmOpen(false);
   };
 
   const mandatoryHeaders = [
@@ -389,7 +395,7 @@ export function MaestranzeTab({
               <button
                 type="button"
                 disabled={selectedIndex === null}
-                onClick={handleDeleteSelected}
+                onClick={requestDeleteSelected}
                 className="maestranze-btn maestranze-btn-danger"
               >
                 Elimina selezionata
@@ -546,6 +552,17 @@ export function MaestranzeTab({
         )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Eliminare la maestranza?"
+        message="La maestranza selezionata verrà rimossa dall'elenco. L'operazione non può essere annullata."
+        confirmLabel="Elimina maestranza"
+        cancelLabel="Annulla"
+        variant="danger"
+        onConfirm={confirmDeleteSelected}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
 
       {showAddModal ? (
         <MaestranzaFormModal

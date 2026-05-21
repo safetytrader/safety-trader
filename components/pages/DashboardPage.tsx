@@ -5,6 +5,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { STATUS_COLORS } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
 import { createCantiere, updateCantiere, deleteCantiere } from "@/lib/db";
@@ -146,6 +147,7 @@ export function DashboardPage({
   authUser,
   onLogout,
 }) {
+  const [deleteCantiereTarget, setDeleteCantiereTarget] = useState(null);
   const [editCantiere, setEditCantiere] = useState(null);
   const [editForm, setEditForm] = useState({
     nome: "",
@@ -168,9 +170,14 @@ export function DashboardPage({
     });
   };
 
-  const handleDelete = async (c, e) => {
+  const requestDeleteCantiere = (c, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Eliminare il cantiere "${c.nome}"?`)) return;
+    setDeleteCantiereTarget(c);
+  };
+
+  const confirmDeleteCantiere = async () => {
+    if (!deleteCantiereTarget) return;
+    const c = deleteCantiereTarget;
     try {
       await deleteCantiere(c.id);
       setCantieri(p => p.filter(x => x.id !== c.id));
@@ -178,6 +185,7 @@ export function DashboardPage({
       console.error("Errore eliminazione cantiere:", err?.message || err);
       setCantieri(p => p.filter(x => x.id !== c.id));
     }
+    setDeleteCantiereTarget(null);
   };
 
   const handleSaveEdit = async () => {
@@ -362,7 +370,7 @@ export function DashboardPage({
                       <button
                         type="button"
                         className="dash-btn-danger"
-                        onClick={e => handleDelete(c, e)}
+                        onClick={e => requestDeleteCantiere(c, e)}
                       >
                         Elimina
                       </button>
@@ -378,6 +386,17 @@ export function DashboardPage({
           </footer>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteCantiereTarget}
+        title="Eliminare il cantiere?"
+        message="L'eliminazione rimuoverà il cantiere, le imprese collegate, i dati documentali e i file associati. L'operazione non può essere annullata."
+        confirmLabel="Elimina cantiere"
+        cancelLabel="Annulla"
+        variant="danger"
+        onConfirm={confirmDeleteCantiere}
+        onCancel={() => setDeleteCantiereTarget(null)}
+      />
 
       {isNewCantiereOpen ? (
         <CantiereFormModal
