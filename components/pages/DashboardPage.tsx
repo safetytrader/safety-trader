@@ -49,7 +49,7 @@ function DashField({ label, value, onChange }) {
   );
 }
 
-const EMPTY_CANTIERE_FORM = { nome: "", indirizzo: "", cse: "CSE", dataInizio: "" };
+const EMPTY_CANTIERE_FORM = { nome: "", indirizzo: "", cse: "", dataInizio: "" };
 
 function CantiereFormModal({ mode, form, setForm, onClose, onSubmit, extraRuolo }) {
   const title = mode === "create" ? "Nuovo cantiere" : "Modifica cantiere";

@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
@@ -90,24 +89,13 @@ function headerUserFromAuth(authUser) {
   };
 }
 
-function AuthStatus({ loggedIn }) {
-  if (loggedIn) return null;
-  return (
-    <Link
-      href="/login"
-      className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
-    >
-      Accedi
-    </Link>
-  );
-}
-
 export default function App() {
   const router = useRouter();
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState("dashboard");
   const [cantieri, setCantieri] = useState([]);
   const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const headerUser = useMemo(() => headerUserFromAuth(authUser), [authUser]);
 
   const loadCantieriForUser = useCallback(async auth => {
@@ -135,16 +123,24 @@ export default function App() {
       const auth = session?.user ?? null;
       setAuthUser(auth);
       await loadCantieriForUser(auth);
+      setAuthChecked(true);
     })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const auth = session?.user ?? null;
       setAuthUser(auth);
       loadCantieriForUser(auth);
+      setAuthChecked(true);
     });
 
     return () => subscription.unsubscribe();
   }, [loadCantieriForUser]);
+
+  useEffect(() => {
+    if (authChecked && !authUser) {
+      router.replace("/login");
+    }
+  }, [authChecked, authUser, router]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -332,28 +328,29 @@ export default function App() {
     extractAll(cid, iid, filesForExtract, uploadedFilesOverride);
   }, [cantieri]);
 
+  if (!authChecked) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#64748b",
+          fontSize: 14,
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        Caricamento…
+      </div>
+    );
+  }
+
+  if (!authUser) return null;
+
   // ══ DASHBOARD ═════════════════════════════════════════════════════════════
   if (page === "dashboard") return (
     <>
-      {!authUser && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-            padding: "12px 24px",
-            background: "#eff6ff",
-            borderBottom: "1px solid #dbeafe",
-            fontSize: 14,
-            fontWeight: 600,
-            color: "#334155",
-          }}
-        >
-          <span>Accedi per sincronizzare i cantieri</span>
-          <AuthStatus loggedIn={!!authUser} />
-        </div>
-      )}
       <DashboardPage
         cantieri={cantieri}
         setCantieri={setCantieri}
