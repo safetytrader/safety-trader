@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { replaceMaestranzeImpresa } from "@/lib/db";
-import { calcScadenza } from "@/lib/utils";
+import { calcScadenza, isExpired, isExpiringSoon } from "@/lib/utils";
 
 const OPTIONAL_COLS = [
   { key: "preposto", label: "Preposto", scadType: "preposto" },
@@ -39,125 +39,166 @@ const hasVal = v => v != null && String(v).trim() !== "";
 export const isBoolChecked = v =>
   v === true || v === "true" || v === "✓" || v === "si" || v === "Sì";
 
-function ImpresaFormInput({ label, value, onChange, hint }) {
+function scadenzaPillClass(displayValue) {
+  if (!displayValue || displayValue === "—" || displayValue === "✓")
+    return "maestranze-pill maestranze-pill-empty";
+  if (isExpired(displayValue)) return "maestranze-pill maestranze-pill-expired";
+  if (isExpiringSoon(displayValue)) return "maestranze-pill maestranze-pill-soon";
+  return "maestranze-pill maestranze-pill-valid";
+}
+
+function DatePill({ value }) {
+  if (!hasVal(value)) {
+    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+  }
+  return <span className={scadenzaPillClass(String(value))}>{value}</span>;
+}
+
+function renderBoolBadge(v) {
+  if (isBoolChecked(v)) {
+    return <span className="maestranze-bool maestranze-bool-yes">✓ Sì</span>;
+  }
+  return <span className="maestranze-bool maestranze-bool-no">No</span>;
+}
+
+function renderDateCell(val, scadType) {
+  if (!hasVal(val)) {
+    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+  }
+  const disp = scadType ? calcScadenza(val, scadType) : val;
+  if (disp === "✓") {
+    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+  }
+  return <span className={scadenzaPillClass(String(disp))}>{disp}</span>;
+}
+
+function renderUnilavCell(val) {
+  if (!hasVal(val)) {
+    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+  }
+  if (String(val).trim().toUpperCase() === "IND") {
+    return <span className="maestranze-pill maestranze-pill-neutral">{val}</span>;
+  }
+  return <DatePill value={val} />;
+}
+
+function MaestranzeFormField({ label, value, onChange, hint }) {
   return (
-    <div className="impresa-field">
+    <div className="maestranze-field">
       <label>{label}</label>
       <input value={value} onChange={e => onChange(e.target.value)} />
-      {hint ? <p className="impresa-field-hint">{hint}</p> : null}
+      {hint ? <p className="maestranze-field-hint">{hint}</p> : null}
     </div>
+  );
+}
+
+function MaestranzeCheckField({ label, checked, onChange }) {
+  return (
+    <label className="maestranze-check-field">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <span>{label}</span>
+    </label>
   );
 }
 
 export function MaestranzaFormFields({ form, setForm }) {
   return (
     <>
-      <ImpresaFormInput
-        label="Nominativo"
-        value={form.nome}
-        onChange={v => setForm(p => ({ ...p, nome: v }))}
-      />
-      <ImpresaFormInput
-        label="Qualifica"
-        value={form.qualifica}
-        onChange={v => setForm(p => ({ ...p, qualifica: v }))}
-      />
-      <label className="impresa-check-row">
-        <input
-          type="checkbox"
-          checked={isBoolChecked(form.dpi)}
-          onChange={e => setForm(p => ({ ...p, dpi: e.target.checked }))}
-        />
-        DPI
-      </label>
-      <ImpresaFormInput
-        label="Idoneità"
-        value={form.idoneita}
-        onChange={v => setForm(p => ({ ...p, idoneita: v }))}
-      />
-      <label className="impresa-check-row">
-        <input
-          type="checkbox"
-          checked={isBoolChecked(form.formazioneBase)}
-          onChange={e => setForm(p => ({ ...p, formazioneBase: e.target.checked }))}
-        />
-        F.Base
-      </label>
-      <ImpresaFormInput
-        label="F.Spec"
-        value={form.formazioneSpec}
-        onChange={v => setForm(p => ({ ...p, formazioneSpec: v }))}
-      />
-      <ImpresaFormInput
-        label="UNILAV"
-        value={form.unilav}
-        onChange={v => setForm(p => ({ ...p, unilav: v }))}
-        hint="IND oppure data"
-      />
-      <p className="impresa-form-section">Abilitazioni / attestati opzionali</p>
-      <ImpresaFormInput
-        label="Preposto"
-        value={form.preposto}
-        onChange={v => setForm(p => ({ ...p, preposto: v }))}
-      />
-      <ImpresaFormInput
-        label="Antinc."
-        value={form.antincendio}
-        onChange={v => setForm(p => ({ ...p, antincendio: v }))}
-      />
-      <ImpresaFormInput
-        label="P.S."
-        value={form.ps}
-        onChange={v => setForm(p => ({ ...p, ps: v }))}
-      />
-      <ImpresaFormInput
-        label="Ponteggi"
-        value={form.ponteggiatori}
-        onChange={v => setForm(p => ({ ...p, ponteggiatori: v }))}
-      />
-      <ImpresaFormInput
-        label="MMT"
-        value={form.mdt}
-        onChange={v => setForm(p => ({ ...p, mdt: v }))}
-      />
-      <ImpresaFormInput
-        label="PLE"
-        value={form.ple}
-        onChange={v => setForm(p => ({ ...p, ple: v }))}
-      />
-      <ImpresaFormInput
-        label="Gru"
-        value={form.gruista}
-        onChange={v => setForm(p => ({ ...p, gruista: v }))}
-      />
-      <ImpresaFormInput
-        label="Spazi Confinati"
-        value={form.confinati}
-        onChange={v => setForm(p => ({ ...p, confinati: v }))}
-      />
+      <div className="maestranze-form-section">
+        <h3 className="maestranze-form-section-title">Dati principali</h3>
+        <div className="maestranze-form-grid">
+          <MaestranzeFormField
+            label="Nominativo"
+            value={form.nome}
+            onChange={v => setForm(p => ({ ...p, nome: v }))}
+          />
+          <MaestranzeFormField
+            label="Qualifica"
+            value={form.qualifica}
+            onChange={v => setForm(p => ({ ...p, qualifica: v }))}
+          />
+        </div>
+      </div>
+
+      <div className="maestranze-form-section">
+        <h3 className="maestranze-form-section-title">Formazione e idoneità</h3>
+        <div className="maestranze-form-grid">
+          <MaestranzeCheckField
+            label="DPI"
+            checked={isBoolChecked(form.dpi)}
+            onChange={v => setForm(p => ({ ...p, dpi: v }))}
+          />
+          <MaestranzeFormField
+            label="Idoneità"
+            value={form.idoneita}
+            onChange={v => setForm(p => ({ ...p, idoneita: v }))}
+          />
+          <MaestranzeCheckField
+            label="F.Base"
+            checked={isBoolChecked(form.formazioneBase)}
+            onChange={v => setForm(p => ({ ...p, formazioneBase: v }))}
+          />
+          <MaestranzeFormField
+            label="F.Spec"
+            value={form.formazioneSpec}
+            onChange={v => setForm(p => ({ ...p, formazioneSpec: v }))}
+          />
+          <MaestranzeFormField
+            label="UNILAV"
+            value={form.unilav}
+            onChange={v => setForm(p => ({ ...p, unilav: v }))}
+            hint="IND oppure data"
+          />
+        </div>
+      </div>
+
+      <div className="maestranze-form-section">
+        <h3 className="maestranze-form-section-title">Abilitazioni opzionali</h3>
+        <div className="maestranze-form-grid">
+          <MaestranzeFormField
+            label="Preposto"
+            value={form.preposto}
+            onChange={v => setForm(p => ({ ...p, preposto: v }))}
+          />
+          <MaestranzeFormField
+            label="Antinc."
+            value={form.antincendio}
+            onChange={v => setForm(p => ({ ...p, antincendio: v }))}
+          />
+          <MaestranzeFormField
+            label="P.S."
+            value={form.ps}
+            onChange={v => setForm(p => ({ ...p, ps: v }))}
+          />
+          <MaestranzeFormField
+            label="Ponteggi"
+            value={form.ponteggiatori}
+            onChange={v => setForm(p => ({ ...p, ponteggiatori: v }))}
+          />
+          <MaestranzeFormField
+            label="MMT"
+            value={form.mdt}
+            onChange={v => setForm(p => ({ ...p, mdt: v }))}
+          />
+          <MaestranzeFormField
+            label="PLE"
+            value={form.ple}
+            onChange={v => setForm(p => ({ ...p, ple: v }))}
+          />
+          <MaestranzeFormField
+            label="Gru"
+            value={form.gruista}
+            onChange={v => setForm(p => ({ ...p, gruista: v }))}
+          />
+          <MaestranzeFormField
+            label="Spazi Confinati"
+            value={form.confinati}
+            onChange={v => setForm(p => ({ ...p, confinati: v }))}
+          />
+        </div>
+      </div>
     </>
   );
-}
-
-function renderBoolCell(v) {
-  return isBoolChecked(v) ? (
-    <span className="impresa-maestranze-ok">✓</span>
-  ) : (
-    <span className="impresa-maestranze-dash">—</span>
-  );
-}
-
-function renderUnilavCell(val, dc) {
-  if (!hasVal(val)) return <span className="impresa-maestranze-dash">—</span>;
-  if (String(val).trim().toUpperCase() === "IND") return <span>{val}</span>;
-  return dc(val);
-}
-
-function renderDateCell(val, scadType, dc) {
-  if (!hasVal(val)) return <span className="impresa-maestranze-dash">—</span>;
-  const disp = scadType ? calcScadenza(val, scadType) : val;
-  if (disp === "✓") return <span className="impresa-maestranze-dash">—</span>;
-  return dc(disp);
 }
 
 export function MaestranzeTab({
@@ -224,162 +265,239 @@ export function MaestranzeTab({
     "UNILAV",
   ];
 
+  const renderIdoneitaCell = val => {
+    if (!hasVal(val)) {
+      return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+    }
+    const text = String(val);
+    return <span className={scadenzaPillClass(text)}>{text}</span>;
+  };
+
   return (
     <>
-      <div className="impresa-maestranze">
-        <div className="impresa-section-head">
-          <span className="impresa-section-title">
-            Maestranze autorizzate ({imp.maestranze.length})
-          </span>
-          <div className="impresa-toolbar">
-            <button
-              type="button"
-              disabled={selectedIndex === null}
-              onClick={openEdit}
-              className="impresa-btn-secondary"
-            >
-              Modifica selezionata
-            </button>
-            <button
-              type="button"
-              disabled={selectedIndex === null}
-              onClick={handleDeleteSelected}
-              className="impresa-btn-danger-outline"
-            >
-              Elimina selezionata
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddMaestra(true)}
-              className="impresa-btn-primary"
-            >
-              + Aggiungi
-            </button>
+      <div className="maestranze-root">
+        <div className="maestranze-stack">
+        <header className="maestranze-header maestranze-panel-card">
+          <div className="maestranze-header-left">
+            <span className="maestranze-eyebadge">Gestione maestranze</span>
+            <h2 className="maestranze-title">Maestranze dell&apos;impresa</h2>
+            <p className="maestranze-subtitle">
+              Monitora idoneità sanitaria, DPI, formazione, UNILAV e abilitazioni
+              operative delle maestranze.
+            </p>
           </div>
-        </div>
+          <div className="maestranze-header-right">
+            <span className="maestranze-count-badge">
+              {imp.maestranze.length === 1
+                ? "1 maestranza"
+                : `${imp.maestranze.length} maestranze`}
+            </span>
+            <div className="maestranze-toolbar">
+              <button
+                type="button"
+                className="maestranze-btn maestranze-btn-primary"
+                onClick={() => setShowAddMaestra(true)}
+              >
+                + Aggiungi maestranza
+              </button>
+              <button
+                type="button"
+                disabled={selectedIndex === null}
+                onClick={openEdit}
+                className="maestranze-btn maestranze-btn-neutral"
+              >
+                Modifica selezionata
+              </button>
+              <button
+                type="button"
+                disabled={selectedIndex === null}
+                onClick={handleDeleteSelected}
+                className="maestranze-btn maestranze-btn-danger"
+              >
+                Elimina selezionata
+              </button>
+            </div>
+          </div>
+        </header>
 
         {imp.maestranze.length === 0 ? (
-          <div className="impresa-maestranze-empty">
-            <div className="impresa-maestranze-empty-icon">👷</div>
-            <p>Carica i documenti per estrarre le maestranze</p>
+          <section className="maestranze-empty-card">
+            <div className="maestranze-empty-icon">👷</div>
+            <h3 className="maestranze-empty-title">Nessuna maestranza presente</h3>
+            <p className="maestranze-empty-text">
+              Aggiungi la prima maestranza per monitorare idoneità, formazione e
+              scadenze.
+            </p>
             <button
               type="button"
-              className="impresa-maestranze-empty-link"
+              className="maestranze-btn maestranze-btn-primary"
+              onClick={() => setShowAddMaestra(true)}
+            >
+              + Aggiungi maestranza
+            </button>
+            <button
+              type="button"
+              className="maestranze-empty-link"
               onClick={() => setActiveTab("upload")}
             >
-              → Vai a Documenti
+              oppure carica documenti nella tab Documenti
             </button>
-          </div>
+          </section>
         ) : (
-          <div className="impresa-table-wrap">
-            <table className="impresa-table">
-              <thead>
-                <tr>
-                  <th className="impresa-table-col-sel" />
-                  {mandatoryHeaders.map(h => (
-                    <th key={h}>{h}</th>
-                  ))}
-                  {visibleOptional.map(col => (
-                    <th key={col.key}>{col.label}</th>
-                  ))}
-                  <th className="impresa-table-col-act" />
-                </tr>
-              </thead>
-              <tbody>
-                {imp.maestranze.map((m, i) => {
-                  const selected = selectedIndex === i;
-                  return (
-                    <tr
-                      key={i}
-                      onClick={() => setSelectedIndex(i)}
-                      className={selected ? "impresa-table-row-selected" : ""}
-                    >
-                      <td
-                        className="impresa-table-col-sel"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <input
-                          type="radio"
-                          name="sel-maestranza"
-                          checked={selected}
-                          onChange={() => setSelectedIndex(i)}
-                        />
-                      </td>
-                      <td className="impresa-table-name">{m.nome || "—"}</td>
-                      <td>{m.qualifica || "—"}</td>
-                      <td className="impresa-table-center">{renderBoolCell(m.dpi)}</td>
-                      <td className="impresa-table-center">
-                        {hasVal(m.idoneita) ? (
-                          dc(m.idoneita)
-                        ) : (
-                          <span className="impresa-maestranze-dash">—</span>
-                        )}
-                      </td>
-                      <td className="impresa-table-center">
-                        {renderBoolCell(m.formazioneBase)}
-                      </td>
-                      <td className="impresa-table-center">
-                        {renderDateCell(m.formazioneSpec, "formazioneSpec", dc)}
-                      </td>
-                      <td className="impresa-table-center">
-                        {renderUnilavCell(m.unilav, dc)}
-                      </td>
-                      {visibleOptional.map(col => (
-                        <td key={col.key} className="impresa-table-center">
-                          {renderDateCell(m[col.key], col.scadType, dc)}
-                        </td>
+          <div className="maestranze-stack-body">
+            <div className="maestranze-legend-bar" aria-label="Legenda scadenze">
+              <span className="maestranze-legend-item">
+                <span className="maestranze-pill maestranze-pill-valid maestranze-legend-sample">
+                  OK
+                </span>
+                Valido
+              </span>
+              <span className="maestranze-legend-item">
+                <span className="maestranze-pill maestranze-pill-soon maestranze-legend-sample">
+                  60g
+                </span>
+                In scadenza
+              </span>
+              <span className="maestranze-legend-item">
+                <span className="maestranze-pill maestranze-pill-expired maestranze-legend-sample">
+                  !
+                </span>
+                Scaduto
+              </span>
+              <span className="maestranze-legend-item">
+                <span className="maestranze-pill maestranze-pill-empty maestranze-legend-sample">
+                  —
+                </span>
+                Dato assente
+              </span>
+              <span className="maestranze-legend-note">
+                * F. base non scade (Acc. Stato-Regioni 21/12/2011)
+              </span>
+            </div>
+
+            <div className="maestranze-table-card maestranze-panel-card">
+              <div className="maestranze-table-scroll">
+                <table className="maestranze-table">
+                  <thead>
+                    <tr>
+                      <th className="maestranze-th maestranze-th-sel" scope="col" />
+                      {mandatoryHeaders.map(h => (
+                        <th key={h} className="maestranze-th" scope="col">
+                          {h}
+                        </th>
                       ))}
-                      <td
-                        className="impresa-table-col-act"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          className="impresa-table-remove"
-                          onClick={() => removeAtIndex(i)}
-                          aria-label="Rimuovi"
-                        >
-                          ✕
-                        </button>
-                      </td>
+                      {visibleOptional.map(col => (
+                        <th key={col.key} className="maestranze-th" scope="col">
+                          {col.label}
+                        </th>
+                      ))}
+                      <th className="maestranze-th maestranze-th-act" scope="col" />
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {imp.maestranze.map((m, i) => {
+                      const selected = selectedIndex === i;
+                      return (
+                        <tr
+                          key={i}
+                          className={selected ? "maestranze-tr-selected" : ""}
+                          onClick={() => setSelectedIndex(i)}
+                        >
+                          <td
+                            className="maestranze-td maestranze-td-sel"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <input
+                              type="radio"
+                              name="sel-maestranza"
+                              checked={selected}
+                              onChange={() => setSelectedIndex(i)}
+                              className="maestranze-radio"
+                            />
+                          </td>
+                          <td className="maestranze-td maestranze-td-name">
+                            {m.nome || "—"}
+                          </td>
+                          <td className="maestranze-td maestranze-td-qual">
+                            {m.qualifica || "—"}
+                          </td>
+                          <td className="maestranze-td maestranze-td-center">
+                            {renderBoolBadge(m.dpi)}
+                          </td>
+                          <td className="maestranze-td maestranze-td-center">
+                            {renderIdoneitaCell(m.idoneita)}
+                          </td>
+                          <td className="maestranze-td maestranze-td-center">
+                            {renderBoolBadge(m.formazioneBase)}
+                          </td>
+                          <td className="maestranze-td maestranze-td-center">
+                            {renderDateCell(m.formazioneSpec, "formazioneSpec")}
+                          </td>
+                          <td className="maestranze-td maestranze-td-center">
+                            {renderUnilavCell(m.unilav)}
+                          </td>
+                          {visibleOptional.map(col => (
+                            <td
+                              key={col.key}
+                              className="maestranze-td maestranze-td-center"
+                            >
+                              {renderDateCell(m[col.key], col.scadType)}
+                            </td>
+                          ))}
+                          <td
+                            className="maestranze-td maestranze-td-act"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="maestranze-row-remove"
+                              onClick={() => removeAtIndex(i)}
+                              aria-label="Rimuovi riga"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
-
-        <div className="impresa-maestranze-legend">
-          <span>* F. base non scade (Acc. Stato-Regioni 21/12/2011)</span>
-          <span className="impresa-legend-pill impresa-legend-red">scaduto</span>
-          <span className="impresa-legend-pill impresa-legend-amber">entro 60gg</span>
         </div>
       </div>
 
       {showEditModal && (
-        <div className="impresa-modal-overlay" onClick={() => setShowEditModal(false)}>
+        <div
+          className="maestranze-modal-overlay"
+          onClick={() => setShowEditModal(false)}
+        >
           <div
-            className="impresa-modal"
+            className="maestranze-modal"
             onClick={e => e.stopPropagation()}
             role="dialog"
+            aria-labelledby="maestranze-modal-title"
           >
-            <div className="impresa-modal-head">
-              <h2 className="impresa-modal-title">Modifica maestranza</h2>
+            <div className="maestranze-modal-head">
+              <h2 id="maestranze-modal-title" className="maestranze-modal-title">
+                Modifica maestranza
+              </h2>
               <button
                 type="button"
-                className="impresa-modal-close"
+                className="maestranze-modal-close"
                 onClick={() => setShowEditModal(false)}
                 aria-label="Chiudi"
               >
                 ×
               </button>
             </div>
-            <div className="impresa-modal-body impresa-modal-body-scroll">
+            <div className="maestranze-modal-body">
               <MaestranzaFormFields form={editForm} setForm={setEditForm} />
               <button
                 type="button"
-                className="impresa-btn-primary impresa-btn-full"
+                className="maestranze-btn maestranze-btn-primary maestranze-btn-full"
                 onClick={handleSaveEdit}
               >
                 Salva modifiche
@@ -389,185 +507,625 @@ export function MaestranzeTab({
         </div>
       )}
 
-      <style jsx global>{`
-        .impresa-maestranze-empty {
-          text-align: center;
-          padding: 48px 24px;
+      <style jsx>{`
+        .maestranze-root {
+          width: 100%;
+          max-width: 100%;
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+
+        .maestranze-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+          width: 100%;
+          max-width: 100%;
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+          min-width: 0;
+        }
+
+        .maestranze-stack-body {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          width: 100%;
+          max-width: 100%;
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+          min-width: 0;
+        }
+
+        .maestranze-panel-card {
+          width: 100%;
+          max-width: 100%;
+          margin-left: 0;
+          margin-right: 0;
+          box-sizing: border-box;
+          border: 1px solid #e2e8f0;
+          border-radius: 24px;
+          background: #ffffff;
+        }
+
+        .maestranze-header {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          margin: 0;
+          padding: 24px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .maestranze-header-left {
+          flex: 1 1 280px;
+          min-width: 0;
+        }
+
+        .maestranze-header-right {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          justify-content: center;
+          gap: 14px;
+          flex: 0 1 auto;
+        }
+
+        .maestranze-eyebadge {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 10px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+        }
+
+        .maestranze-title {
+          margin: 0 0 8px;
+          font-size: 26px;
+          font-weight: 800;
+          letter-spacing: -0.03em;
+          line-height: 1.2;
+          color: #020617;
+        }
+
+        .maestranze-count-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 12px;
+          border-radius: 999px;
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+          font-size: 12px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .maestranze-subtitle {
+          margin: 0;
+          max-width: 52ch;
+          font-size: 14px;
+          line-height: 1.6;
           color: #64748b;
         }
 
-        .impresa-maestranze-empty-icon {
-          font-size: 32px;
-          margin-bottom: 10px;
+        .maestranze-header .maestranze-toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          justify-content: flex-end;
         }
 
-        .impresa-maestranze-empty p {
-          margin: 0;
-          font-size: 14px;
+        .maestranze-header .maestranze-btn {
+          padding: 9px 14px;
+          font-size: 12px;
         }
 
-        .impresa-maestranze-empty-link {
-          margin-top: 12px;
-          border: 0;
-          background: none;
-          color: #2563eb;
-          font-size: 13px;
-          font-weight: 700;
+        .maestranze-btn {
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 12px;
+          font-weight: 800;
           cursor: pointer;
-          text-decoration: underline;
+          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+            box-shadow 0.18s ease, opacity 0.18s ease;
         }
 
-        .impresa-table-wrap {
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
+        .maestranze-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+          box-shadow: none;
         }
 
-        .impresa-table {
+        .maestranze-btn-primary {
+          border: 0;
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+        }
+
+        .maestranze-btn-primary:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+
+        .maestranze-btn-neutral {
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #334155;
+        }
+
+        .maestranze-btn-neutral:hover:not(:disabled) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+
+        .maestranze-btn-danger {
+          border: 1px solid #fecaca;
+          background: #ffffff;
+          color: #dc2626;
+        }
+
+        .maestranze-btn-danger:hover:not(:disabled) {
+          background: #fef2f2;
+          border-color: #fca5a5;
+        }
+
+        .maestranze-btn-full {
           width: 100%;
+          margin-top: 8px;
+        }
+
+        .maestranze-legend-bar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 14px 18px;
+          width: 100%;
+          max-width: 100%;
+          margin: 0;
+          padding: 12px 16px;
+          box-sizing: border-box;
+          border-radius: 14px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+        }
+
+        .maestranze-legend-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #64748b;
+        }
+
+        .maestranze-legend-sample {
+          min-width: 32px;
+          justify-content: center;
+        }
+
+        .maestranze-legend-note {
+          margin-left: auto;
+          font-size: 10px;
+          color: #94a3b8;
+          font-weight: 600;
+        }
+
+        .maestranze-table-card {
+          margin: 0;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
+          overflow: hidden;
+        }
+
+        .maestranze-table-scroll {
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+          max-width: 100%;
+        }
+
+        .maestranze-table {
+          width: max-content;
+          min-width: 100%;
           border-collapse: collapse;
           font-size: 12px;
         }
 
-        .impresa-table thead tr {
-          background: #f8fafc;
-        }
-
-        .impresa-table th {
-          padding: 12px 14px;
+        .maestranze-th {
+          padding: 14px 16px;
           text-align: left;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
           color: #64748b;
-          white-space: nowrap;
+          background: #f8fafc;
           border-bottom: 1px solid #e2e8f0;
+          white-space: nowrap;
+          position: sticky;
+          top: 0;
+          z-index: 1;
         }
 
-        .impresa-table td {
-          padding: 12px 14px;
+        .maestranze-th-sel {
+          width: 44px;
+          text-align: center;
+        }
+
+        .maestranze-th-act {
+          width: 48px;
+          text-align: center;
+        }
+
+        .maestranze-td {
+          padding: 14px 16px;
           border-bottom: 1px solid #f1f5f9;
           color: #475569;
           vertical-align: middle;
+          line-height: 1.4;
         }
 
-        .impresa-table tbody tr {
+        .maestranze-table tbody tr {
           cursor: pointer;
           transition: background 0.15s ease;
         }
 
-        .impresa-table tbody tr:hover {
+        .maestranze-table tbody tr:hover {
           background: #fafbfc;
         }
 
-        .impresa-table-row-selected {
+        .maestranze-tr-selected {
           background: #eff6ff !important;
-          box-shadow: inset 0 0 0 1px #bfdbfe;
         }
 
-        .impresa-table-col-sel {
-          width: 36px;
+        .maestranze-tr-selected:hover {
+          background: #eff6ff !important;
+        }
+
+        .maestranze-td-sel {
           text-align: center;
         }
 
-        .impresa-table-col-act {
-          width: 40px;
+        .maestranze-td-center {
           text-align: center;
         }
 
-        .impresa-table-name {
-          font-weight: 700;
+        .maestranze-td-name {
+          font-weight: 800;
           color: #0f172a;
           white-space: nowrap;
+          min-width: 140px;
         }
 
-        .impresa-table-center {
-          text-align: center;
-        }
-
-        .impresa-maestranze-ok {
-          color: #059669;
-          font-weight: 800;
-        }
-
-        .impresa-maestranze-dash {
-          color: #cbd5e1;
-        }
-
-        .impresa-table-remove {
-          border: 0;
-          background: none;
-          color: #cbd5e1;
-          font-size: 14px;
-          cursor: pointer;
-          padding: 4px;
-        }
-
-        .impresa-table-remove:hover {
-          color: #dc2626;
-        }
-
-        .impresa-maestranze-legend {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px 20px;
-          align-items: center;
-          padding: 14px 22px;
-          border-top: 1px solid #f1f5f9;
-          background: #fafbfc;
-          font-size: 11px;
+        .maestranze-td-qual {
           color: #64748b;
+          min-width: 120px;
+          max-width: 200px;
         }
 
-        .impresa-legend-pill {
-          padding: 3px 8px;
-          border-radius: 6px;
-          font-weight: 700;
-        }
-
-        .impresa-legend-red {
-          background: #fef2f2;
-          color: #b91c1c;
-        }
-
-        .impresa-legend-amber {
-          background: #fffbeb;
-          color: #b45309;
-        }
-
-        .impresa-check-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          font-size: 13px;
-          font-weight: 600;
-          color: #334155;
-        }
-
-        .impresa-check-row input {
+        .maestranze-radio {
           width: 16px;
           height: 16px;
           accent-color: #2563eb;
+          cursor: pointer;
         }
 
-        .impresa-form-section {
-          margin: 8px 0 0;
-          padding-top: 12px;
-          border-top: 1px solid #f1f5f9;
+        .maestranze-row-remove {
+          border: 0;
+          background: #f8fafc;
+          color: #94a3b8;
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
+          font-size: 14px;
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .maestranze-row-remove:hover {
+          background: #fef2f2;
+          color: #dc2626;
+        }
+
+        .maestranze-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 52px;
+          padding: 4px 8px;
+          border-radius: 8px;
           font-size: 11px;
           font-weight: 800;
-          color: #64748b;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
+          white-space: nowrap;
         }
 
-        .impresa-field-hint {
+        .maestranze-pill-valid {
+          background: #ecfdf5;
+          color: #047857;
+          border: 1px solid #a7f3d0;
+        }
+
+        .maestranze-pill-soon {
+          background: #fffbeb;
+          color: #b45309;
+          border: 1px solid #fde68a;
+        }
+
+        .maestranze-pill-expired {
+          background: #fef2f2;
+          color: #b91c1c;
+          border: 1px solid #fecaca;
+        }
+
+        .maestranze-pill-empty {
+          background: #f8fafc;
+          color: #cbd5e1;
+          border: 1px solid #f1f5f9;
+        }
+
+        .maestranze-pill-neutral {
+          background: #f1f5f9;
+          color: #475569;
+          border: 1px solid #e2e8f0;
+        }
+
+        .maestranze-bool {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 44px;
+          padding: 4px 8px;
+          border-radius: 8px;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .maestranze-bool-yes {
+          background: #ecfdf5;
+          color: #047857;
+          border: 1px solid #a7f3d0;
+        }
+
+        .maestranze-bool-no {
+          background: #f8fafc;
+          color: #94a3b8;
+          border: 1px solid #e2e8f0;
+        }
+
+        .maestranze-empty-card {
+          width: 100%;
+          max-width: 100%;
+          margin: 0;
+          box-sizing: border-box;
+          text-align: center;
+          padding: 52px 32px;
+          border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .maestranze-empty-icon {
+          font-size: 36px;
+          margin-bottom: 12px;
+        }
+
+        .maestranze-empty-title {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 900;
+          color: #020617;
+        }
+
+        .maestranze-empty-text {
+          margin: 10px auto 22px;
+          max-width: 400px;
+          font-size: 14px;
+          line-height: 1.65;
+          color: #64748b;
+        }
+
+        .maestranze-empty-link {
+          display: block;
+          margin: 14px auto 0;
+          border: 0;
+          background: none;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          text-decoration: underline;
+        }
+
+        .maestranze-empty-link:hover {
+          color: #2563eb;
+        }
+
+        .maestranze-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 60;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(15, 23, 42, 0.52);
+          backdrop-filter: blur(4px);
+        }
+
+        .maestranze-modal {
+          width: 100%;
+          max-width: 760px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+        }
+
+        .maestranze-modal-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 22px 26px;
+          border-bottom: 1px solid #f1f5f9;
+          flex-shrink: 0;
+        }
+
+        .maestranze-modal-title {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 900;
+          color: #020617;
+        }
+
+        .maestranze-modal-close {
+          width: 36px;
+          height: 36px;
+          border: 0;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #64748b;
+          font-size: 22px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .maestranze-modal-close:hover {
+          background: #f1f5f9;
+          color: #0f172a;
+        }
+
+        .maestranze-modal-body {
+          padding: 22px 26px 26px;
+          overflow-y: auto;
+        }
+
+        .maestranze-form-section {
+          margin-bottom: 20px;
+        }
+
+        .maestranze-form-section-title {
+          margin: 0 0 12px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #f1f5f9;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #64748b;
+        }
+
+        .maestranze-form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .maestranze-field label {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #475569;
+        }
+
+        .maestranze-field input {
+          width: 100%;
+          height: 48px;
+          box-sizing: border-box;
+          border: 1px solid #dbe3ef;
+          border-radius: 14px;
+          background: #ffffff;
+          padding: 0 14px;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+        }
+
+        .maestranze-field input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
+        .maestranze-field-hint {
           margin: 4px 0 0;
           font-size: 11px;
           color: #94a3b8;
         }
 
-        .impresa-modal-body-scroll {
-          max-height: 65vh;
-          overflow-y: auto;
+        .maestranze-check-field {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 48px;
+          padding: 10px 14px;
+          border-radius: 14px;
+          border: 1px solid #e2e8f0;
+          background: #fafbfc;
+          font-size: 13px;
+          font-weight: 700;
+          color: #334155;
+          cursor: pointer;
+        }
+
+        .maestranze-check-field input {
+          width: 18px;
+          height: 18px;
+          accent-color: #2563eb;
+        }
+
+        @media (max-width: 720px) {
+          .maestranze-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 20px;
+          }
+
+          .maestranze-header-right {
+            align-items: stretch;
+          }
+
+          .maestranze-count-badge {
+            align-self: flex-start;
+          }
+
+          .maestranze-header .maestranze-toolbar {
+            flex-direction: column;
+            justify-content: stretch;
+          }
+
+          .maestranze-header .maestranze-toolbar .maestranze-btn {
+            width: 100%;
+          }
+
+          .maestranze-legend-note {
+            margin-left: 0;
+            width: 100%;
+          }
+
+          .maestranze-form-grid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </>
