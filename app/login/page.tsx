@@ -1,143 +1,741 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { signIn, signUp } from "@/lib/auth";
+
+type MessageType = "success" | "error" | null;
 
 export default function LoginPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("error");
-  const [loading, setLoading] = useState(false);
 
-  function showMsg(text: string, type: "error" | "success") {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<MessageType>(null);
+
+  function showMsg(text: string, type: MessageType) {
     setMessage(text);
     setMessageType(type);
   }
 
-  async function handleSignIn() {
-    if (!email || !password) {
-      showMsg("Inserisci email e password.", "error");
-      return;
-    }
+  async function handleLogin() {
     try {
       setLoading(true);
       setMessage("");
+      setMessageType(null);
+
       await signIn(email, password);
+
+      showMsg("Accesso riuscito. Reindirizzamento in corso...", "success");
       router.push("/");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Accesso non riuscito.";
-    
-      showMsg(message, "error");
+      const text = err instanceof Error ? err.message : "Accesso non riuscito.";
+      showMsg(text, "error");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSignUp() {
-    if (!email || !password) {
-      showMsg("Inserisci email e password.", "error");
-      return;
-    }
+  async function handleRegister() {
     try {
       setLoading(true);
       setMessage("");
-      const data = await signUp(email, password);
-      const user = data?.user;
-      if (user && !user.email_confirmed_at) {
-        showMsg("Registrazione inviata. Controlla la email per confermare l’account, poi accedi.", "success");
-      } else {
-        showMsg("Registrazione completata. Ora puoi accedere.", "success");
-      }
+      setMessageType(null);
+
+      await signUp(email, password);
+
+      showMsg(
+        "Registrazione completata. Controlla la tua email per confermare l'account.",
+        "success"
+      );
     } catch (err) {
-      const message =
+      const text =
         err instanceof Error ? err.message : "Registrazione non riuscita.";
-    
-      showMsg(message, "error");
+      showMsg(text, "error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <img src="/logo.svg" alt="" width={44} height={44} className="rounded-lg flex-shrink-0" aria-hidden />
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">Safety Trader</h1>
-            <p className="text-sm text-slate-500">D.Lgs. 81/2008</p>
-          </div>
-        </div>
-        <h2 className="mb-1 text-lg font-semibold text-slate-800">Accedi</h2>
-        <p className="mb-6 text-sm text-slate-500">Autenticazione Supabase (email e password)</p>
+    <>
+      <main className="login-page">
+        <div className="ambient ambient-one" />
+        <div className="ambient ambient-two" />
 
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              autoComplete="email"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              autoComplete="current-password"
-            />
-          </div>
+        <section className="login-shell">
+          <div className="product-panel">
+            <div className="brand-row">
+              <div className="brand-mark">ST</div>
 
-          {message && (
-            <p
-              className={`rounded-lg px-3 py-2 text-sm ${
-                messageType === "success"
-                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                  : "bg-red-50 text-red-800 border border-red-200"
-              }`}
-            >
-              {message}
+              <div>
+                <div className="brand-title">Safety Trader</div>
+                <div className="brand-subtitle">D.Lgs. 81/2008</div>
+              </div>
+            </div>
+
+            <div className="eyebrow">Controllo documentale Sicurezza sul Lavoro</div>
+
+            <h1>
+              Gestisci documenti, scadenze e imprese in un unico spazio.
+            </h1>
+
+            <p className="lead">
+              Piattaforma per la gestione documentale della sicurezza nei
+              cantieri: cantieri, imprese, checklist, allegati, maestranze e
+              documenti sempre sotto controllo.
             </p>
-          )}
 
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSignIn}
-              disabled={loading}
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-            >
-              {loading ? "Attendere..." : "Accedi"}
-            </button>
-            <button
-              type="button"
-              onClick={handleSignUp}
-              disabled={loading}
-              className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              Registrati
-            </button>
+            <div className="feature-list">
+              <div className="feature-card">
+                <span>01</span>
+                <div>
+                  <strong>Gestione cantieri e imprese</strong>
+                  <p>Organizza commesse, soggetti coinvolti e ruoli operativi.</p>
+                </div>
+              </div>
+
+              <div className="feature-card">
+                <span>02</span>
+                <div>
+                  <strong>Check-list documentale e allegati</strong>
+                  <p>Monitora documenti aziendali, scadenze e completezza.</p>
+                </div>
+              </div>
+
+              <div className="feature-card">
+                <span>03</span>
+                <div>
+                  <strong>Maestranze, scadenze e documenti</strong>
+                  <p>Tieni sotto controllo idoneità, formazione e abilitazioni.</p>
+                </div>
+              </div>
+            </div>
+
+            <p className="legal-note">
+              Safety Trader è uno strumento di supporto operativo e
+              documentale. Non sostituisce valutazioni professionali, verifiche
+              normative o responsabilità previste dal D.Lgs. 81/2008.
+            </p>
           </div>
-        </div>
-      </div>
-      <p className="mt-6 text-center">
-        <Link
-          href="/privacy"
-          className="text-xs text-slate-500 hover:text-slate-700 transition"
-        >
-          Privacy e note legali
-        </Link>
-      </p>
-    </main>
+
+          <div className="auth-panel">
+            <div className="auth-card">
+              <div className="mobile-logo">ST</div>
+
+              <h2>Accedi al tuo account</h2>
+              <p className="auth-subtitle">
+                Inserisci le credenziali per continuare nella tua area
+                documentale.
+              </p>
+
+              {message && (
+                <div
+                  className={
+                    messageType === "error"
+                      ? "message message-error"
+                      : "message message-success"
+                  }
+                >
+                  {message}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="nome@azienda.it"
+                  autoComplete="email"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !loading) {
+                      handleLogin();
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="actions">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={handleLogin}
+                  disabled={loading}
+                >
+                  {loading ? "Operazione in corso..." : "Accedi"}
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={handleRegister}
+                  disabled={loading}
+                >
+                  Registrati
+                </button>
+              </div>
+
+              <div className="auth-links">
+                <Link href="/privacy">Privacy e note legali</Link>
+                <Link href="/">Torna alla dashboard</Link>
+              </div>
+            </div>
+
+            <p className="security-note">
+              Accesso riservato agli utenti autorizzati. I dati sono protetti
+              tramite autenticazione Supabase e policy RLS.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <style jsx>{`
+        .login-page {
+          position: relative;
+          min-height: 100svh;
+          height: 100svh;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at top left, rgba(37, 99, 235, 0.24), transparent 32rem),
+            radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.16), transparent 34rem),
+            linear-gradient(135deg, #020617 0%, #0f172a 48%, #111827 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px 20px;
+          color: #0f172a;
+          box-sizing: border-box;
+        }
+
+        .ambient {
+          position: absolute;
+          border-radius: 999px;
+          filter: blur(70px);
+          opacity: 0.65;
+          pointer-events: none;
+        }
+
+        .ambient-one {
+          width: 360px;
+          height: 360px;
+          top: -120px;
+          left: -80px;
+          background: rgba(59, 130, 246, 0.45);
+        }
+
+        .ambient-two {
+          width: 420px;
+          height: 420px;
+          right: -120px;
+          bottom: -140px;
+          background: rgba(34, 211, 238, 0.18);
+        }
+
+        .login-shell {
+          position: relative;
+          z-index: 1;
+          width: min(1120px, 100%);
+          height: min(760px, calc(100svh - 48px));
+          max-height: calc(100svh - 48px);
+          display: grid;
+          grid-template-columns: 1.08fr 0.92fr;
+          overflow: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 32px;
+          background: #ffffff;
+          box-shadow: 0 30px 90px rgba(2, 6, 23, 0.45);
+        }
+
+        .product-panel {
+          position: relative;
+          padding: 44px;
+          min-height: 0;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          background:
+            radial-gradient(circle at 15% 10%, rgba(96, 165, 250, 0.28), transparent 24rem),
+            radial-gradient(circle at 90% 80%, rgba(34, 211, 238, 0.16), transparent 22rem),
+            #0f172a;
+          color: #ffffff;
+        }
+
+        .brand-row {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          margin-bottom: 32px;
+          flex-shrink: 0;
+        }
+
+        .brand-mark,
+        .mobile-logo {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 56px;
+          height: 56px;
+          border-radius: 18px;
+          background: #ffffff;
+          color: #0f172a;
+          font-weight: 900;
+          font-size: 18px;
+          letter-spacing: -0.03em;
+          box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+        }
+
+        .brand-title {
+          font-size: 24px;
+          font-weight: 800;
+          letter-spacing: -0.03em;
+        }
+
+        .brand-subtitle {
+          margin-top: 3px;
+          font-size: 13px;
+          font-weight: 700;
+          color: #bfdbfe;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 14px;
+          padding: 7px 11px;
+          flex-shrink: 0;
+          border: 1px solid rgba(147, 197, 253, 0.22);
+          border-radius: 999px;
+          background: rgba(59, 130, 246, 0.12);
+          color: #dbeafe;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+
+        h1 {
+          max-width: 680px;
+          margin: 0;
+          font-size: clamp(34px, 4.2vw, 50px);
+          line-height: 1;
+          letter-spacing: -0.06em;
+          font-weight: 900;
+          flex-shrink: 0;
+        }
+
+        .lead {
+          max-width: 610px;
+          margin: 16px 0 0;
+          color: #cbd5e1;
+          font-size: 15px;
+          line-height: 1.6;
+          flex-shrink: 0;
+        }
+
+        .feature-list {
+          display: grid;
+          gap: 10px;
+          margin-top: 28px;
+          flex: 1;
+          min-height: 0;
+        }
+
+        .feature-card {
+          display: flex;
+          gap: 14px;
+          padding: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.11);
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.075);
+          backdrop-filter: blur(12px);
+        }
+
+        .feature-card span {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+          width: 34px;
+          height: 34px;
+          border-radius: 12px;
+          background: rgba(96, 165, 250, 0.18);
+          color: #bfdbfe;
+          font-size: 13px;
+          font-weight: 900;
+        }
+
+        .feature-card strong {
+          display: block;
+          color: #ffffff;
+          font-size: 14px;
+          font-weight: 800;
+        }
+
+        .feature-card p {
+          margin: 4px 0 0;
+          color: #cbd5e1;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .legal-note {
+          max-width: 640px;
+          margin: 18px 0 0;
+          color: #94a3b8;
+          font-size: 11px;
+          line-height: 1.5;
+          flex-shrink: 0;
+        }
+
+        .auth-panel {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 40px;
+          min-height: 0;
+          overflow: hidden;
+          background:
+            linear-gradient(180deg, rgba(248, 250, 252, 1), rgba(241, 245, 249, 1));
+        }
+
+        .auth-card {
+          width: 100%;
+          max-width: 430px;
+          margin: 0 auto;
+          padding: 30px;
+          border: 1px solid #e2e8f0;
+          border-radius: 28px;
+          background: #ffffff;
+          box-shadow: 0 24px 60px rgba(15, 23, 42, 0.13);
+        }
+
+        .mobile-logo {
+          display: none;
+          margin-bottom: 22px;
+          background: #0f172a;
+          color: #ffffff;
+        }
+
+        h2 {
+          margin: 0;
+          color: #020617;
+          font-size: 28px;
+          line-height: 1.08;
+          font-weight: 900;
+          letter-spacing: -0.045em;
+        }
+
+        .auth-subtitle {
+          margin: 8px 0 20px;
+          color: #64748b;
+          font-size: 14px;
+          line-height: 1.55;
+        }
+
+        .message {
+          margin-bottom: 16px;
+          padding: 11px 13px;
+          border-radius: 16px;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 600;
+        }
+
+        .message-error {
+          border: 1px solid #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .message-success {
+          border: 1px solid #bbf7d0;
+          background: #f0fdf4;
+          color: #15803d;
+        }
+
+        .form-group {
+          margin-top: 12px;
+        }
+
+        .form-group label {
+          display: block;
+          margin-bottom: 6px;
+          color: #334155;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .form-group input {
+          width: 100%;
+          height: 48px;
+          box-sizing: border-box;
+          border: 1px solid #dbe3ef;
+          border-radius: 16px;
+          background: #ffffff;
+          padding: 0 15px;
+          color: #0f172a;
+          font-size: 14px;
+          outline: none;
+          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .form-group input::placeholder {
+          color: #94a3b8;
+        }
+
+        .form-group input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.11);
+        }
+
+        .actions {
+          display: grid;
+          gap: 10px;
+          margin-top: 18px;
+        }
+
+        .primary-btn,
+        .secondary-btn {
+          height: 48px;
+          border-radius: 16px;
+          border: 0;
+          font-size: 14px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: transform 0.18s ease, box-shadow 0.18s ease,
+            background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .primary-btn {
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 14px 30px rgba(37, 99, 235, 0.24);
+        }
+
+        .primary-btn:hover {
+          background: #1d4ed8;
+          transform: translateY(-1px);
+          box-shadow: 0 18px 38px rgba(37, 99, 235, 0.28);
+        }
+
+        .secondary-btn {
+          border: 1px solid #dbe3ef;
+          background: #ffffff;
+          color: #0f172a;
+        }
+
+        .secondary-btn:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          transform: translateY(-1px);
+        }
+
+        .primary-btn:disabled,
+        .secondary-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.6;
+          transform: none;
+          box-shadow: none;
+        }
+
+        .auth-links {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          margin-top: 18px;
+          padding-top: 18px;
+          border-top: 1px solid #eef2f7;
+        }
+
+        .auth-links a {
+          color: #64748b;
+          font-size: 13px;
+          font-weight: 700;
+          text-decoration: none;
+          transition: color 0.18s ease;
+        }
+
+        .auth-links a:hover {
+          color: #2563eb;
+        }
+
+        .security-note {
+          max-width: 430px;
+          margin: 16px auto 0;
+          color: #64748b;
+          text-align: center;
+          font-size: 11px;
+          line-height: 1.5;
+          flex-shrink: 0;
+        }
+
+        @media (max-height: 820px) {
+          .login-page {
+            padding: 16px 18px;
+          }
+
+          .login-shell {
+            height: min(700px, calc(100svh - 32px));
+            max-height: calc(100svh - 32px);
+          }
+
+          .product-panel,
+          .auth-panel {
+            padding: 32px;
+          }
+
+          .brand-row {
+            margin-bottom: 22px;
+          }
+
+          h1 {
+            font-size: clamp(30px, 3.8vw, 44px);
+          }
+
+          .lead {
+            margin-top: 12px;
+            font-size: 14px;
+          }
+
+          .feature-list {
+            margin-top: 20px;
+            gap: 8px;
+          }
+
+          .feature-card {
+            padding: 12px;
+          }
+
+          .legal-note {
+            margin-top: 12px;
+            font-size: 10px;
+            line-height: 1.4;
+          }
+
+          .auth-card {
+            padding: 26px;
+          }
+
+          h2 {
+            font-size: 26px;
+          }
+
+          .auth-subtitle {
+            margin-bottom: 16px;
+          }
+        }
+
+        @media (max-height: 720px) {
+          .legal-note {
+            display: none;
+          }
+
+          .feature-card p {
+            display: none;
+          }
+
+          .feature-card {
+            padding: 10px 12px;
+          }
+        }
+
+        @media (max-width: 980px) {
+          .login-page {
+            height: auto;
+            min-height: 100svh;
+            overflow: auto;
+            padding: 28px 16px;
+          }
+
+          .login-shell {
+            grid-template-columns: 1fr;
+            border-radius: 28px;
+            height: auto;
+            max-height: none;
+          }
+
+          .product-panel {
+            padding: 34px;
+          }
+
+          .brand-row {
+            margin-bottom: 32px;
+          }
+
+          .feature-list {
+            margin-top: 30px;
+          }
+
+          .auth-panel {
+            padding: 34px;
+          }
+
+          .auth-card {
+            max-width: 100%;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .login-page {
+            height: auto;
+            min-height: 100svh;
+            overflow: auto;
+          }
+
+          .product-panel {
+            display: none;
+          }
+
+          .auth-panel {
+            min-height: 100svh;
+            padding: 26px 18px;
+          }
+
+          .login-shell {
+            width: 100%;
+            border-radius: 24px;
+            height: auto;
+            max-height: none;
+          }
+
+          .auth-card {
+            padding: 26px;
+            border-radius: 24px;
+          }
+
+          .mobile-logo {
+            display: flex;
+          }
+
+          h2 {
+            font-size: 26px;
+          }
+
+          .auth-links {
+            flex-direction: column;
+            align-items: center;
+          }
+        }
+      `}</style>
+    </>
   );
 }
