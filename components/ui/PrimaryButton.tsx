@@ -1,4 +1,12 @@
 // @ts-nocheck
 export function PrimaryButton({ children, onClick }) {
-  return <button onClick={onClick} className="w-full bg-blue-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-400 transition">{children}</button>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-600/15 transition hover:bg-blue-500"
+    >
+      {children}
+    </button>
+  );
 }

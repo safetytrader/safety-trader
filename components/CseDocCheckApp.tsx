@@ -274,8 +274,21 @@ export default function App() {
   if (page === "dashboard") return (
     <>
       {!authUser && (
-        <div className="bg-slate-100 border-b border-slate-200 px-6 py-3 flex items-center justify-center gap-3">
-          <span className="text-sm text-slate-600">Accedi per sincronizzare i cantieri</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: "12px 24px",
+            background: "#eff6ff",
+            borderBottom: "1px solid #dbeafe",
+            fontSize: 14,
+            fontWeight: 600,
+            color: "#334155",
+          }}
+        >
+          <span>Accedi per sincronizzare i cantieri</span>
           <AuthStatus loggedIn={!!authUser} />
         </div>
       )}
@@ -297,7 +310,25 @@ export default function App() {
           }
         }}
       />
-      {showNewCantiere && <Modal title="Nuovo cantiere" onClose={() => setShowNewCantiere(false)}><div className="space-y-3"><Field label="Nome cantiere" value={newCantiere.nome} onChange={v => setNewCantiere(p => ({ ...p, nome: v }))} /><Field label="Indirizzo" value={newCantiere.indirizzo} onChange={v => setNewCantiere(p => ({ ...p, indirizzo: v }))} /><div><label className="text-xs font-medium text-slate-600 block mb-1">Ruolo</label><select value={newCantiere.cse} onChange={e => setNewCantiere(p => ({ ...p, cse: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"><option value="">Seleziona ruolo</option><option value="CSE">CSE</option><option value="Impresa">Impresa</option><option value="RSPP">RSPP</option></select></div><Field label="Data inizio" value={newCantiere.dataInizio} onChange={v => setNewCantiere(p => ({ ...p, dataInizio: v }))} /><PrimaryButton onClick={async () => { try { const created = await createCantiere(newCantiere); setCantieri(p => [...p, created]); setShowNewCantiere(false); } catch (err) { console.error("Errore creazione cantiere:", err?.message || err); setCantieri(p => [...p, { id: Date.now(), ...newCantiere, imprese: [] }]); setShowNewCantiere(false); } }}>Crea cantiere</PrimaryButton></div></Modal>}
+      {showNewCantiere && (
+        <Modal title="Nuovo cantiere" onClose={() => setShowNewCantiere(false)}>
+          <div className="space-y-4">
+            <Field label="Nome cantiere" value={newCantiere.nome} onChange={v => setNewCantiere(p => ({ ...p, nome: v }))} />
+            <Field label="Indirizzo" value={newCantiere.indirizzo} onChange={v => setNewCantiere(p => ({ ...p, indirizzo: v }))} />
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">Ruolo</label>
+              <select value={newCantiere.cse} onChange={e => setNewCantiere(p => ({ ...p, cse: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+                <option value="">Seleziona ruolo</option>
+                <option value="CSE">CSE</option>
+                <option value="Impresa">Impresa</option>
+                <option value="RSPP">RSPP</option>
+              </select>
+            </div>
+            <Field label="Data inizio" value={newCantiere.dataInizio} onChange={v => setNewCantiere(p => ({ ...p, dataInizio: v }))} />
+            <PrimaryButton onClick={async () => { try { const created = await createCantiere(newCantiere); setCantieri(p => [...p, created]); setShowNewCantiere(false); } catch (err) { console.error("Errore creazione cantiere:", err?.message || err); setCantieri(p => [...p, { id: Date.now(), ...newCantiere, imprese: [] }]); setShowNewCantiere(false); } }}>Crea cantiere</PrimaryButton>
+          </div>
+        </Modal>
+      )}
     </>
   );
 
