@@ -21,9 +21,72 @@ export function sanitizeExportSlug(value) {
   );
 }
 
-export function buildExportFilename(cantiere, imp, suffix, ext) {
+export function buildExportFilename(cantiere, imp, ext) {
   const date = new Date().toISOString().slice(0, 10);
-  return `safety-trader_${sanitizeExportSlug(cantiere?.nome)}_${sanitizeExportSlug(imp?.nome)}_${suffix}_${date}.${ext}`;
+  return `safety-trader_${sanitizeExportSlug(cantiere?.nome)}_${sanitizeExportSlug(imp?.nome)}_${date}.${ext}`;
+}
+
+function profileFromUser(user) {
+  if (!user) {
+    return { nomeCognome: null, societa: null, sede: null, email: null };
+  }
+  const m = user.user_metadata || {};
+  const nome = String(m.nome ?? "").trim();
+  const cognome = String(m.cognome ?? "").trim();
+  const nomeCognome = [nome, cognome].filter(Boolean).join(" ") || null;
+  const societa = String(m.societa ?? "").trim() || null;
+  const via = String(m.sede_via ?? "").trim();
+  const cap = String(m.sede_cap ?? "").trim();
+  const citta = String(m.sede_citta ?? "").trim();
+  let sede = null;
+  if (via && cap && citta) sede = `${via}, ${cap} ${citta}`;
+  else if (via && citta) sede = `${via}, ${citta}`;
+  else if (via) sede = via;
+  const email = String(user.email ?? "").trim() || null;
+  return { nomeCognome, societa, sede, email };
+}
+
+function ruoloFromCantiere(cantiere) {
+  const ruolo = String(cantiere?.ruolo ?? cantiere?.cse ?? "").trim();
+  return ruolo || null;
+}
+
+function hasProfileData(profile, ruolo) {
+  return !!(profile.nomeCognome || profile.societa || profile.sede || profile.email || ruolo);
+}
+
+function buildProfileHtmlBlock(profile, ruolo) {
+  if (!hasProfileData(profile, ruolo)) return "";
+  const lines = ['<div class="prof">', "<strong>Professionista / Società:</strong><br/>"];
+  if (profile.nomeCognome) lines.push(`${escHtml(profile.nomeCognome)}<br/>`);
+  if (profile.societa) lines.push(`${escHtml(profile.societa)}<br/>`);
+  if (profile.sede) lines.push(`Sede: ${escHtml(profile.sede)}<br/>`);
+  if (profile.email) lines.push(`Email: ${escHtml(profile.email)}<br/>`);
+  if (ruolo) lines.push(`Ruolo: ${escHtml(ruolo)}`);
+  lines.push("</div>");
+  return lines.join("");
+}
+
+function buildProfileCsvRows(profile, ruolo) {
+  if (!hasProfileData(profile, ruolo)) {
+    return [
+      ["Safety Trader — D.Lgs. 81/2008"],
+      ["Report documentale sicurezza"],
+      [""],
+    ];
+  }
+  const rows = [
+    ["Safety Trader — D.Lgs. 81/2008"],
+    ["Report documentale sicurezza"],
+    ["Professionista / Società", ""],
+  ];
+  if (profile.nomeCognome) rows.push([profile.nomeCognome, ""]);
+  if (profile.societa) rows.push([profile.societa, ""]);
+  if (profile.sede) rows.push(["Sede", profile.sede]);
+  if (profile.email) rows.push(["Email", profile.email]);
+  if (ruolo) rows.push(["Ruolo", ruolo]);
+  rows.push([""]);
+  return rows;
 }
 
 function checklistStatusLabel(checks) {
@@ -41,8 +104,11 @@ function scadenzaStyle(value) {
 }
 
 // ── EXPORT HTML REPORT ────────────────────────────────────────────────────────
-export function buildSchediMaestanze(cantiere, imp) {
+export function buildSchediMaestanze(cantiere, imp, user) {
   const oggi = new Date().toLocaleDateString("it-IT");
+  const profile = profileFromUser(user);
+  const ruolo = ruoloFromCantiere(cantiere);
+  const profileHtml = buildProfileHtmlBlock(profile, ruolo);
   const checks = imp.checks || {};
   const checklistLabel = checklistStatusLabel(checks);
   const checklistDone = CHECKLIST_ITEMS.filter(i => checks[i.id] === "si").length;
@@ -102,6 +168,8 @@ export function buildSchediMaestanze(cantiere, imp) {
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 30px; }
     .brand { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2563eb; margin-bottom: 6px; }
     h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; color: #020617; }
+    .prof { font-size: 11px; color: #475569; margin-bottom: 14px; line-height: 1.7; padding-bottom: 14px; border-bottom: 1px solid #e2e8f0; }
+    .prof strong { color: #334155; }
     .meta { font-size: 11px; color: #64748b; margin-bottom: 22px; line-height: 1.7; }
     .meta strong { color: #334155; }
     h2 { font-size: 12px; font-weight: 700; margin: 18px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; color: #0f172a; }
@@ -117,7 +185,8 @@ export function buildSchediMaestanze(cantiere, imp) {
 </head>
 <body>
   <div class="brand">Safety Trader · D.Lgs. 81/2008</div>
-  <h1>Report documentale impresa</h1>
+  <h1>Report documentale sicurezza</h1>
+  ${profileHtml}
   <div class="meta">
     <strong>Cantiere:</strong> ${escHtml(cantiere.nome)}<br/>
     <strong>Impresa:</strong> ${escHtml(imp.nome)}<br/>
@@ -181,15 +250,16 @@ export function buildSchediMaestanze(cantiere, imp) {
 }
 
 // ── EXPORT CSV ────────────────────────────────────────────────────────────────
-export function buildCSV(cantiere, imp) {
+export function buildCSV(cantiere, imp, user) {
   const e = v => `"${String(v || "").replace(/"/g, '""')}"`;
   const oggi = new Date().toLocaleDateString("it-IT");
   const checks = imp.checks || {};
   const checklistLabel = checklistStatusLabel(checks);
+  const profile = profileFromUser(user);
+  const ruolo = ruoloFromCantiere(cantiere);
 
   return [
-    ["Safety Trader — D.Lgs. 81/2008"],
-    ["Report", "Elenco maestranze"],
+    ...buildProfileCsvRows(profile, ruolo),
     ["Cantiere", cantiere?.nome || ""],
     ["Impresa", imp.nome],
     ["Attività", imp.attivita || ""],

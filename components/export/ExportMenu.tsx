@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { getCurrentUser } from "@/lib/auth";
 import {
   buildSchediMaestanze,
   buildCSV,
@@ -15,8 +16,8 @@ const EXPORT_OPTIONS = [
     title: "Report documentale impresa",
     description:
       "Riepilogo HTML con cantiere, impresa, checklist, allegati, scadenziario e note CSE.",
-    run: ({ cantiere, imp }) => buildSchediMaestanze(cantiere, imp),
-    filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "report", "html"),
+    run: ({ cantiere, imp, user }) => buildSchediMaestanze(cantiere, imp, user),
+    filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "html"),
     mime: "text/html;charset=utf-8",
     requiresMaestranze: false,
   },
@@ -25,8 +26,8 @@ const EXPORT_OPTIONS = [
     icon: "📊",
     title: "Esporta CSV",
     description: "Elenco maestranze in formato tabellare, apribile con Excel.",
-    run: ({ cantiere, imp }) => "\uFEFF" + buildCSV(cantiere, imp),
-    filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "maestranze", "csv"),
+    run: ({ cantiere, imp, user }) => "\uFEFF" + buildCSV(cantiere, imp, user),
+    filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "csv"),
     mime: "text/csv;charset=utf-8",
     requiresMaestranze: true,
   },
@@ -44,7 +45,7 @@ export function ExportMenu({ cantiere, imp, onClose }) {
     onClose();
   };
 
-  const handleExport = option => {
+  const handleExport = async option => {
     if (option.requiresMaestranze && !(imp.maestranze?.length > 0)) {
       setNotice(
         "Nessuna maestranza da esportare. Aggiungi le maestranze nella tab dedicata prima di generare il CSV."
@@ -52,7 +53,13 @@ export function ExportMenu({ cantiere, imp, onClose }) {
       return;
     }
     setNotice("");
-    const content = option.run({ cantiere, imp });
+    let user = null;
+    try {
+      user = await getCurrentUser();
+    } catch {
+      user = null;
+    }
+    const content = option.run({ cantiere, imp, user });
     download(content, option.filename(cantiere, imp), option.mime);
   };
 
