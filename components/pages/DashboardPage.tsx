@@ -7,7 +7,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { STATUS_COLORS } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
-import { updateCantiere, deleteCantiere } from "@/lib/db";
+import { createCantiere, updateCantiere, deleteCantiere } from "@/lib/db";
 
 const RUOLI_CANTIERE = ["CSE", "Impresa", "RSPP"];
 
@@ -48,9 +48,77 @@ function DashField({ label, value, onChange }) {
   );
 }
 
-function openNewCantiereForm(setNewCantiere, setShowNewCantiere) {
-  setNewCantiere({ nome: "", indirizzo: "", cse: "CSE", dataInizio: "" });
-  setShowNewCantiere(true);
+const EMPTY_CANTIERE_FORM = { nome: "", indirizzo: "", cse: "CSE", dataInizio: "" };
+
+function CantiereFormModal({ mode, form, setForm, onClose, onSubmit, extraRuolo }) {
+  const title = mode === "create" ? "Nuovo cantiere" : "Modifica cantiere";
+  const primaryLabel = mode === "create" ? "Crea cantiere" : "Salva modifiche";
+
+  return (
+    <div className="dash-modal-overlay" onClick={onClose}>
+      <div
+        className="dash-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="dash-modal-title"
+        aria-modal="true"
+      >
+        <div className="dash-modal-head">
+          <div className="dash-modal-head-text">
+            <h2 id="dash-modal-title" className="dash-modal-title">
+              {title}
+            </h2>
+            <p className="dash-modal-sub">
+              Inserisci i dati principali del cantiere e il ruolo ricoperto.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="dash-modal-close"
+            onClick={onClose}
+            aria-label="Chiudi"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="dash-modal-body">
+          <p className="dash-modal-section-title">Dati cantiere</p>
+          <div className="dash-modal-fields">
+            <DashField
+              label="Nome cantiere"
+              value={form.nome}
+              onChange={v => setForm(p => ({ ...p, nome: v }))}
+            />
+            <DashField
+              label="Indirizzo"
+              value={form.indirizzo}
+              onChange={v => setForm(p => ({ ...p, indirizzo: v }))}
+            />
+            <RuoloField
+              value={form.cse}
+              extraValue={extraRuolo}
+              onChange={v => setForm(p => ({ ...p, cse: v }))}
+            />
+            <DashField
+              label="Data inizio"
+              value={form.dataInizio}
+              onChange={v => setForm(p => ({ ...p, dataInizio: v }))}
+            />
+          </div>
+        </div>
+
+        <div className="dash-modal-foot">
+          <button type="button" className="dash-modal-btn-secondary" onClick={onClose}>
+            Annulla
+          </button>
+          <button type="button" className="dash-modal-btn-primary" onClick={onSubmit}>
+            {primaryLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function countDocumenti(cantieri) {
@@ -69,7 +137,9 @@ export function DashboardPage({
   cantieri,
   setCantieri,
   user,
+  newCantiere,
   setNewCantiere,
+  showNewCantiere,
   setShowNewCantiere,
   setActiveCantiere,
   setPage,
@@ -125,10 +195,38 @@ export function DashboardPage({
     }
   };
 
+  const handleCreateCantiere = async () => {
+    try {
+      const created = await createCantiere(newCantiere);
+      setCantieri(p => [...p, created]);
+      handleCloseNewCantiere();
+    } catch (err) {
+      console.error("Errore creazione cantiere:", err?.message || err);
+      setCantieri(p => [...p, { id: Date.now(), ...newCantiere, imprese: [] }]);
+      handleCloseNewCantiere();
+    }
+  };
+
   const openCantiere = id => {
     setActiveCantiere(id);
     setPage("cantiere");
   };
+
+  const handleOpenNewCantiere = () => {
+    setEditCantiere(null);
+    setNewCantiere(EMPTY_CANTIERE_FORM);
+    if (typeof setShowNewCantiere === "function") {
+      setShowNewCantiere(true);
+    }
+  };
+
+  const handleCloseNewCantiere = () => {
+    if (typeof setShowNewCantiere === "function") {
+      setShowNewCantiere(false);
+    }
+  };
+
+  const isNewCantiereOpen = showNewCantiere === true;
 
   return (
     <>
@@ -158,7 +256,7 @@ export function DashboardPage({
             <button
               type="button"
               className="dash-btn-primary dash-btn-new"
-              onClick={() => openNewCantiereForm(setNewCantiere, setShowNewCantiere)}
+              onClick={handleOpenNewCantiere}
             >
               + Nuovo cantiere
             </button>
@@ -190,7 +288,7 @@ export function DashboardPage({
               <button
                 type="button"
                 className="dash-btn-primary"
-                onClick={() => openNewCantiereForm(setNewCantiere, setShowNewCantiere)}
+                onClick={handleOpenNewCantiere}
               >
                 + Nuovo cantiere
               </button>
@@ -281,59 +379,26 @@ export function DashboardPage({
         </div>
       </div>
 
-      {editCantiere && (
-        <div className="dash-modal-overlay" onClick={() => setEditCantiere(null)}>
-          <div
-            className="dash-modal"
-            onClick={e => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="dash-modal-title"
-          >
-            <div className="dash-modal-head">
-              <h2 id="dash-modal-title" className="dash-modal-title">
-                Modifica cantiere
-              </h2>
-              <button
-                type="button"
-                className="dash-modal-close"
-                onClick={() => setEditCantiere(null)}
-                aria-label="Chiudi"
-              >
-                ×
-              </button>
-            </div>
-            <div className="dash-modal-body">
-              <DashField
-                label="Nome cantiere"
-                value={editForm.nome}
-                onChange={v => setEditForm(p => ({ ...p, nome: v }))}
-              />
-              <DashField
-                label="Indirizzo"
-                value={editForm.indirizzo}
-                onChange={v => setEditForm(p => ({ ...p, indirizzo: v }))}
-              />
-              <RuoloField
-                value={editForm.cse}
-                extraValue={editCantiere.cse}
-                onChange={v => setEditForm(p => ({ ...p, cse: v }))}
-              />
-              <DashField
-                label="Data inizio"
-                value={editForm.dataInizio}
-                onChange={v => setEditForm(p => ({ ...p, dataInizio: v }))}
-              />
-              <button
-                type="button"
-                className="dash-btn-primary dash-btn-full"
-                onClick={handleSaveEdit}
-              >
-                Salva modifiche
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {isNewCantiereOpen ? (
+        <CantiereFormModal
+          mode="create"
+          form={newCantiere || EMPTY_CANTIERE_FORM}
+          setForm={setNewCantiere}
+          onClose={handleCloseNewCantiere}
+          onSubmit={handleCreateCantiere}
+        />
+      ) : null}
+
+      {editCantiere ? (
+        <CantiereFormModal
+          mode="edit"
+          form={editForm}
+          setForm={setEditForm}
+          extraRuolo={editCantiere.cse}
+          onClose={() => setEditCantiere(null)}
+          onSubmit={handleSaveEdit}
+        />
+      ) : null}
 
       <style jsx>{`
         .dash-page {
@@ -680,7 +745,7 @@ export function DashboardPage({
           color: #2563eb;
         }
 
-        .dash-modal-overlay {
+        :global(.dash-modal-overlay) {
           position: fixed;
           inset: 0;
           z-index: 50;
@@ -688,95 +753,181 @@ export function DashboardPage({
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: rgba(15, 23, 42, 0.52);
-          backdrop-filter: blur(4px);
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(6px);
         }
 
-        .dash-modal {
+        :global(.dash-modal) {
           width: 100%;
-          max-width: 520px;
+          max-width: 560px;
           max-height: 90vh;
-          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
           border-radius: 24px;
           border: 1px solid #e2e8f0;
           background: #ffffff;
-          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+          box-shadow:
+            0 25px 50px -12px rgba(15, 23, 42, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.08);
         }
 
-        .dash-modal-head {
+        :global(.dash-modal-head) {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
-          gap: 12px;
-          padding: 22px 26px;
+          gap: 16px;
+          padding: 24px 24px 20px;
           border-bottom: 1px solid #f1f5f9;
+          flex-shrink: 0;
         }
 
-        .dash-modal-title {
+        :global(.dash-modal-head-text) {
+          min-width: 0;
+        }
+
+        :global(.dash-modal-title) {
           margin: 0;
-          font-size: 18px;
-          font-weight: 900;
-          color: #020617;
-        }
-
-        .dash-modal-close {
-          width: 36px;
-          height: 36px;
-          border: 0;
-          border-radius: 10px;
-          background: #f8fafc;
-          color: #64748b;
-          font-size: 22px;
-          line-height: 1;
-          cursor: pointer;
-          transition: background 0.18s ease, color 0.18s ease;
-        }
-
-        .dash-modal-close:hover {
-          background: #f1f5f9;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
           color: #0f172a;
         }
 
-        .dash-modal-body {
-          padding: 22px 26px 26px;
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
+        :global(.dash-modal-sub) {
+          margin: 6px 0 0;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.45;
+          color: #64748b;
         }
 
-        .dash-field {
-          display: flex;
-          flex-direction: column;
+        :global(.dash-modal-close) {
+          width: 32px;
+          height: 32px;
+          flex-shrink: 0;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #ffffff;
+          color: #64748b;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
         }
 
-        .dash-label {
-          margin-bottom: 7px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
+        :global(.dash-modal-close:hover) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          color: #0f172a;
+        }
+
+        :global(.dash-modal-body) {
+          padding: 20px 24px 24px;
+          overflow-y: auto;
+          flex: 1;
+          min-height: 0;
+        }
+
+        :global(.dash-modal-section-title) {
+          margin: 0 0 14px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.02em;
+        }
+
+        :global(.dash-modal-fields) {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        :global(.dash-modal-foot) {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 16px 24px 20px;
+          border-top: 1px solid #e2e8f0;
+          background: #fafbfc;
+          flex-shrink: 0;
+        }
+
+        :global(.dash-modal-btn-primary),
+        :global(.dash-modal-btn-secondary) {
+          height: 46px;
+          padding: 0 18px;
+          border-radius: 14px;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            box-shadow 0.15s ease;
+        }
+
+        :global(.dash-modal-btn-primary) {
+          border: 1px solid #1d4ed8;
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+        }
+
+        :global(.dash-modal-btn-primary:hover) {
+          background: #1d4ed8;
+          border-color: #1e40af;
+        }
+
+        :global(.dash-modal-btn-secondary) {
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
           color: #475569;
         }
 
-        .dash-input,
-        .dash-select {
+        :global(.dash-modal-btn-secondary:hover) {
+          background: #f8fafc;
+          border-color: #94a3b8;
+          color: #0f172a;
+        }
+
+        :global(.dash-field) {
+          display: flex;
+          flex-direction: column;
+        }
+
+        :global(.dash-label) {
+          margin-bottom: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #334155;
+        }
+
+        :global(.dash-input),
+        :global(.dash-select) {
           width: 100%;
           height: 48px;
           box-sizing: border-box;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #cbd5e1;
           border-radius: 14px;
           background: #ffffff;
           padding: 0 14px;
           font-size: 14px;
           color: #0f172a;
           outline: none;
-          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .dash-input:focus,
-        .dash-select:focus {
+        :global(.dash-input:focus),
+        :global(.dash-select:focus) {
           border-color: #2563eb;
-          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
         }
 
         .dash-btn-full {
@@ -836,6 +987,16 @@ export function DashboardPage({
           .dash-btn-open,
           .dash-btn-neutral,
           .dash-btn-danger {
+            width: 100%;
+          }
+
+          :global(.dash-modal-foot) {
+            flex-direction: column-reverse;
+            align-items: stretch;
+          }
+
+          :global(.dash-modal-btn-primary),
+          :global(.dash-modal-btn-secondary) {
             width: 100%;
           }
         }

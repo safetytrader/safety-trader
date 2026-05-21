@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
-import { createCantiere, createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
+import { createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
 import {
   CHECKLIST_ITEMS,
@@ -358,32 +358,15 @@ export default function App() {
         cantieri={cantieri}
         setCantieri={setCantieri}
         user={headerUser}
+        newCantiere={newCantiere}
         setNewCantiere={setNewCantiere}
+        showNewCantiere={showNewCantiere}
         setShowNewCantiere={setShowNewCantiere}
         setActiveCantiere={setActiveCantiere}
         setPage={setPage}
         authUser={authUser}
         onLogout={authUser ? handleLogout : null}
       />
-      {showNewCantiere && (
-        <Modal title="Nuovo cantiere" onClose={() => setShowNewCantiere(false)}>
-          <div className="space-y-4">
-            <Field label="Nome cantiere" value={newCantiere.nome} onChange={v => setNewCantiere(p => ({ ...p, nome: v }))} />
-            <Field label="Indirizzo" value={newCantiere.indirizzo} onChange={v => setNewCantiere(p => ({ ...p, indirizzo: v }))} />
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">Ruolo</label>
-              <select value={newCantiere.cse} onChange={e => setNewCantiere(p => ({ ...p, cse: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                <option value="">Seleziona ruolo</option>
-                <option value="CSE">CSE</option>
-                <option value="Impresa">Impresa</option>
-                <option value="RSPP">RSPP</option>
-              </select>
-            </div>
-            <Field label="Data inizio" value={newCantiere.dataInizio} onChange={v => setNewCantiere(p => ({ ...p, dataInizio: v }))} />
-            <PrimaryButton onClick={async () => { try { const created = await createCantiere(newCantiere); setCantieri(p => [...p, created]); setShowNewCantiere(false); } catch (err) { console.error("Errore creazione cantiere:", err?.message || err); setCantieri(p => [...p, { id: Date.now(), ...newCantiere, imprese: [] }]); setShowNewCantiere(false); } }}>Crea cantiere</PrimaryButton>
-          </div>
-        </Modal>
-      )}
     </>
   );
 
