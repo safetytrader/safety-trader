@@ -7,6 +7,7 @@ import {
   buildSchediMaestanze,
   buildCSV,
   buildExportFilename,
+  openReportPdfPrint,
 } from "@/lib/export";
 
 const EXPORT_OPTIONS = [
@@ -30,6 +31,15 @@ const EXPORT_OPTIONS = [
     filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "csv"),
     mime: "text/csv;charset=utf-8",
     requiresMaestranze: true,
+  },
+  {
+    id: "pdf",
+    icon: "📄",
+    title: "Report PDF documentale",
+    description: "Genera un report riepilogativo completo dell'impresa.",
+    action: "print",
+    run: ({ cantiere, imp, user }) => openReportPdfPrint(cantiere, imp, user),
+    requiresMaestranze: false,
   },
 ];
 
@@ -58,6 +68,19 @@ export function ExportMenu({ cantiere, imp, onClose }) {
       user = await getCurrentUser();
     } catch {
       user = null;
+    }
+    if (option.action === "print") {
+      try {
+        option.run({ cantiere, imp, user });
+        onClose();
+      } catch (err) {
+        setNotice(
+          err instanceof Error
+            ? err.message
+            : "Impossibile aprire la finestra di stampa PDF."
+        );
+      }
+      return;
     }
     const content = option.run({ cantiere, imp, user });
     download(content, option.filename(cantiere, imp), option.mime);
