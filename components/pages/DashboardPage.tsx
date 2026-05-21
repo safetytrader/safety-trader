@@ -144,15 +144,20 @@ export function DashboardPage({
 
             <div className="dash-header-right">
               {authEmail && onLogout && (
-                <button
-                  type="button"
-                  className="dash-logout"
-                  onClick={onLogout}
-                  title={authEmail}
-                >
-                  <span className="dash-logout-email">{authEmail}</span>
-                  Logout
-                </button>
+                <>
+                  <Link href="/account" className="dash-account-link">
+                    Account
+                  </Link>
+                  <button
+                    type="button"
+                    className="dash-logout"
+                    onClick={onLogout}
+                    title={authEmail}
+                  >
+                    <span className="dash-logout-email">{authEmail}</span>
+                    Logout
+                  </button>
+                </>
               )}
               <div className="dash-user">
                 <div className="dash-user-avatar">
@@ -429,6 +434,21 @@ export function DashboardPage({
           align-items: center;
           gap: 14px;
           flex-shrink: 0;
+        }
+
+        .dash-account-link {
+          font-size: 12px;
+          font-weight: 700;
+          color: #93c5fd;
+          text-decoration: none;
+          padding: 8px 4px;
+          transition: color 0.18s ease;
+        }
+
+        .dash-account-link:hover {
+          color: #ffffff;
+          text-decoration: underline;
+          text-underline-offset: 3px;
         }
 
         .dash-logout {
