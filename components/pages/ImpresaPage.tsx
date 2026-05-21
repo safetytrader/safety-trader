@@ -94,7 +94,7 @@ export function ImpresaPage({
                 aria-expanded={showExport}
                 aria-haspopup="dialog"
               >
-                Esporta
+                Esporta report
               </button>
             </>
           }

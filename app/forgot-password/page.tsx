@@ -35,7 +35,7 @@ export default function ForgotPasswordPage() {
       showMsg(SUCCESS_MSG, "success");
     } catch (err) {
       const text =
-        err instanceof Error ? err.message : "Invio link non riuscito. Riprova.";
+        err instanceof Error ? err.message : "Invio del link non riuscito. Riprova.";
       showMsg(text, "error");
     } finally {
       setLoading(false);

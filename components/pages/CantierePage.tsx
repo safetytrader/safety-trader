@@ -44,7 +44,7 @@ function ImpresaFormModal({ mode, form, setForm, onClose, onSubmit }) {
               {title}
             </h2>
             <p className="cantiere-modal-sub">
-              Inserisci i dati principali dell&apos;impresa presente in cantiere.
+              Inserisci i dati principali dell&apos;Impresa presente nel Cantiere.
             </p>
           </div>
           <button
@@ -267,7 +267,7 @@ export function CantierePage({
                 </span>
               </div>
               <p className="cantiere-hero-text">
-                Gestione imprese, documenti e scadenze del cantiere.
+                Gestione Impresa, Documenti e scadenze operative del Cantiere.
               </p>
             </div>
             <button
@@ -335,7 +335,7 @@ export function CantierePage({
                         <span className="cantiere-meta-item">📎 {docs} documenti</span>
                       )}
                       <span className="cantiere-meta-item">
-                        Check-list {done}/{tot}
+                        Checklist {done}/{tot}
                       </span>
                     </div>
 

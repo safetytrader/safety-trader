@@ -273,8 +273,8 @@ export function buildSchediMaestanze(cantiere, imp, user) {
     .join("");
 
   const noteBlock = imp.note
-    ? `<h2>Note CSE</h2><p style="font-size:11px;line-height:1.6;color:#475569;white-space:pre-wrap">${escHtml(imp.note)}</p>`
-    : `<h2>Note CSE</h2><p style="font-size:11px;color:#94a3b8">Nessuna nota inserita.</p>`;
+    ? `<h2>Note</h2><p style="font-size:11px;line-height:1.6;color:#475569;white-space:pre-wrap">${escHtml(imp.note)}</p>`
+    : `<h2>Note</h2><p style="font-size:11px;color:#94a3b8">Nessuna nota inserita.</p>`;
 
   return `<!DOCTYPE html>
 <html lang="it">
@@ -390,7 +390,7 @@ export function buildReportPdfDocument(cantiere, imp, user) {
   ).join("");
 
   const checklistNote = imp.note
-    ? `<p class="meta"><strong>Note CSE:</strong> ${escHtml(imp.note)}</p>`
+    ? `<p class="meta"><strong>Note:</strong> ${escHtml(imp.note)}</p>`
     : "";
 
   const allegatiPresent = ALLEGATI_CONFIG.filter(cfg => !!imp.allegati?.[cfg.key]).length;

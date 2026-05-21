@@ -390,7 +390,7 @@ export function MaestranzeTab({
                 onClick={openEdit}
                 className="maestranze-btn maestranze-btn-neutral"
               >
-                Modifica selezionata
+                Modifica
               </button>
               <button
                 type="button"
@@ -398,7 +398,7 @@ export function MaestranzeTab({
                 onClick={requestDeleteSelected}
                 className="maestranze-btn maestranze-btn-danger"
               >
-                Elimina selezionata
+                Elimina
               </button>
             </div>
           </div>

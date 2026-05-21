@@ -144,7 +144,7 @@ export default function AccountPage() {
           ) : user ? (
             <>
               <header className="account-hero">
-                <span className="account-badge">Profilo utente</span>
+                <span className="account-badge">Account</span>
                 <h1 className="account-title">Impostazioni account</h1>
                 <p className="account-lead">
                   Gestisci i dati del profilo utilizzati nell&apos;app e nei report.

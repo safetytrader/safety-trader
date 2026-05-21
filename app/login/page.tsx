@@ -40,7 +40,8 @@ export default function LoginPage() {
       showMsg("Accesso riuscito. Reindirizzamento in corso...", "success");
       router.push("/");
     } catch (err) {
-      const text = err instanceof Error ? err.message : "Accesso non riuscito.";
+      const text =
+        err instanceof Error ? err.message : "Accesso non riuscito. Verifica email e password.";
       showMsg(text, "error");
     } finally {
       setLoading(false);
@@ -118,14 +119,11 @@ export default function LoginPage() {
 
             <div className="eyebrow">Controllo documentale Sicurezza sul Lavoro</div>
 
-            <h1>
-              Gestisci documenti, scadenze e imprese in un unico spazio.
-            </h1>
+            <h1>Piattaforma per la gestione documentale della sicurezza nei cantieri.</h1>
 
             <p className="lead">
-              Piattaforma per la gestione documentale della sicurezza nei
-              cantieri: cantieri, imprese, checklist, allegati, maestranze e
-              documenti sempre sotto controllo.
+              Organizza Cantiere, Impresa, Checklist, Allegati, Maestranze e
+              Documenti in un unico ambiente operativo.
             </p>
 
             <div className="feature-list">
@@ -133,14 +131,14 @@ export default function LoginPage() {
                 <span>01</span>
                 <div>
                   <strong>Gestione cantieri e imprese</strong>
-                  <p>Organizza commesse, soggetti coinvolti e ruoli operativi.</p>
+                  <p>Organizza Cantiere, Impresa e Ruolo in modo strutturato.</p>
                 </div>
               </div>
 
               <div className="feature-card">
                 <span>02</span>
                 <div>
-                  <strong>Check-list documentale e allegati</strong>
+                  <strong>Checklist e Allegati</strong>
                   <p>Monitora documenti aziendali, scadenze e completezza.</p>
                 </div>
               </div>
@@ -224,7 +222,7 @@ export default function LoginPage() {
 
               {registerMode ? (
                 <div className="profile-section">
-                  <div className="profile-section-head">Dati profilo</div>
+                  <div className="profile-section-head">Dati personali e Società</div>
 
                   <div className="profile-grid profile-grid-2">
                     <div className="form-group">
@@ -270,7 +268,7 @@ export default function LoginPage() {
                       type="text"
                       value={sedeVia}
                       onChange={e => setSedeVia(e.target.value)}
-                      placeholder="Via Esempio 12"
+                      placeholder="Via e numero civico"
                       autoComplete="street-address"
                     />
                   </div>

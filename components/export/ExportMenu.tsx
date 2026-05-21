@@ -14,9 +14,9 @@ const EXPORT_OPTIONS = [
   {
     id: "report",
     icon: "📋",
-    title: "Report documentale impresa",
+    title: "Report HTML documentale",
     description:
-      "Riepilogo HTML con cantiere, impresa, checklist, allegati, scadenziario e note CSE.",
+      "Riepilogo HTML con Cantiere, Impresa, Checklist, Allegati, Maestranze e scadenze.",
     run: ({ cantiere, imp, user }) => buildSchediMaestanze(cantiere, imp, user),
     filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "html"),
     mime: "text/html;charset=utf-8",
@@ -25,8 +25,8 @@ const EXPORT_OPTIONS = [
   {
     id: "csv",
     icon: "📊",
-    title: "Esporta CSV",
-    description: "Elenco maestranze in formato tabellare, apribile con Excel.",
+    title: "Esporta elenco CSV",
+    description: "Elenco Maestranze in formato tabellare, apribile con Excel.",
     run: ({ cantiere, imp, user }) => "\uFEFF" + buildCSV(cantiere, imp, user),
     filename: (cantiere, imp) => buildExportFilename(cantiere, imp, "csv"),
     mime: "text/csv;charset=utf-8",
@@ -129,7 +129,7 @@ export function ExportMenu({ cantiere, imp, onClose }) {
           Esporta report
         </h2>
         <p className="export-modal-sub">
-          Genera un riepilogo documentale dell&apos;impresa e delle maestranze.
+          Genera un report riepilogativo completo dell&apos;Impresa.
         </p>
 
         <div className="export-context">

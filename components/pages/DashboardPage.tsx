@@ -70,7 +70,7 @@ function CantiereFormModal({ mode, form, setForm, onClose, onSubmit, extraRuolo 
               {title}
             </h2>
             <p className="dash-modal-sub">
-              Inserisci i dati principali del cantiere e il ruolo ricoperto.
+              Inserisci i dati principali del Cantiere e il Ruolo.
             </p>
           </div>
           <button

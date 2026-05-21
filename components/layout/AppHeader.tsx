@@ -34,7 +34,7 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
 
         <div className="app-header-right">
           {actions ? <div className="app-header-actions">{actions}</div> : null}
-          <Link href="/account" className="app-header-user" aria-label="Profilo utente">
+          <Link href="/account" className="app-header-user" aria-label="Account">
             <div className="app-header-avatar">{initials}</div>
             <div className="app-header-user-meta">
               <div className="app-header-user-name">{displayName}</div>

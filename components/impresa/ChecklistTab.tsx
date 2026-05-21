@@ -75,7 +75,7 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
           ) : (
             <div className="checklist-panel-card checklist-main-card">
               <div className="checklist-main-head">
-                <span className="checklist-main-title">Check-list POS</span>
+                <span className="checklist-main-title">Checklist POS</span>
                 <span className="checklist-main-meta">
                   {done}/{CHECKLIST_ITEMS.length} conformi
                 </span>
@@ -141,7 +141,7 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
 
               <div className="checklist-notes">
                 <label className="checklist-notes-label" htmlFor="checklist-note-cse">
-                  Note CSE
+                  Note
                 </label>
                 <textarea
                   id="checklist-note-cse"
