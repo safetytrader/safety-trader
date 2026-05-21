@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
-import { createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
+import { getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
 import {
   CHECKLIST_ITEMS,
@@ -383,11 +383,13 @@ export default function App() {
           authUser={authUser}
           onLogout={authUser ? handleLogout : null}
           setPage={setPage}
+          newImpresa={newImpresa}
+          setNewImpresa={setNewImpresa}
+          showNewImpresa={showNewImpresa}
           setShowNewImpresa={setShowNewImpresa}
           setActiveImpresa={setActiveImpresa}
           setActiveTab={setActiveTab}
         />
-        {showNewImpresa && <Modal title="Aggiungi impresa" onClose={() => setShowNewImpresa(false)}><div className="space-y-3"><Field label="Ragione sociale" value={newImpresa.nome} onChange={v => setNewImpresa(p => ({ ...p, nome: v }))} /><Field label="Attività svolta" value={newImpresa.attivita} onChange={v => setNewImpresa(p => ({ ...p, attivita: v }))} /><PrimaryButton onClick={async () => { try { const created = await createImpresa(activeCantiere, newImpresa); setCantieri(prev => prev.map(c => c.id !== activeCantiere ? c : { ...c, imprese: [...c.imprese, created] })); } catch { setCantieri(prev => prev.map(c => c.id !== activeCantiere ? c : { ...c, imprese: [...c.imprese, { ...mkImpresa(), ...newImpresa }] })); } setNewImpresa({ nome: "", attivita: "" }); setShowNewImpresa(false); }}>Aggiungi</PrimaryButton></div></Modal>}
       </>
     );
   }

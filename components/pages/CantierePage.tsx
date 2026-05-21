@@ -6,7 +6,10 @@ import { useState } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { CHECKLIST_ITEMS, STATUS_COLORS, BADGE } from "@/lib/constants";
 import { calcStatus } from "@/lib/utils";
-import { updateImpresaDb, deleteImpresaDb } from "@/lib/db";
+import { createImpresa, updateImpresaDb, deleteImpresaDb } from "@/lib/db";
+import { mkImpresa } from "@/lib/utils";
+
+const EMPTY_IMPRESA_FORM = { nome: "", attivita: "" };
 
 function CantiereField({ label, value, onChange }) {
   return (
@@ -21,6 +24,67 @@ function CantiereField({ label, value, onChange }) {
   );
 }
 
+function ImpresaFormModal({ mode, form, setForm, onClose, onSubmit }) {
+  const title = mode === "create" ? "Aggiungi impresa" : "Modifica impresa";
+  const primaryLabel = mode === "create" ? "Aggiungi impresa" : "Salva modifiche";
+
+  return (
+    <div className="cantiere-modal-overlay" onClick={onClose}>
+      <div
+        className="cantiere-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="cantiere-impresa-modal-title"
+        aria-modal="true"
+      >
+        <div className="cantiere-modal-head">
+          <div className="cantiere-modal-head-text">
+            <h2 id="cantiere-impresa-modal-title" className="cantiere-modal-title">
+              {title}
+            </h2>
+            <p className="cantiere-modal-sub">
+              Inserisci i dati principali dell&apos;impresa presente in cantiere.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="cantiere-modal-close"
+            onClick={onClose}
+            aria-label="Chiudi"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="cantiere-modal-body">
+          <p className="cantiere-modal-section-title">Dati impresa</p>
+          <div className="cantiere-modal-fields">
+            <CantiereField
+              label="Ragione sociale"
+              value={form.nome}
+              onChange={v => setForm(p => ({ ...p, nome: v }))}
+            />
+            <CantiereField
+              label="Attività svolta"
+              value={form.attivita}
+              onChange={v => setForm(p => ({ ...p, attivita: v }))}
+            />
+          </div>
+        </div>
+
+        <div className="cantiere-modal-foot">
+          <button type="button" className="cantiere-modal-btn-secondary" onClick={onClose}>
+            Annulla
+          </button>
+          <button type="button" className="cantiere-modal-btn-primary" onClick={onSubmit}>
+            {primaryLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CantierePage({
   c,
   setCantieri,
@@ -28,6 +92,9 @@ export function CantierePage({
   authUser,
   onLogout,
   setPage,
+  newImpresa,
+  setNewImpresa,
+  showNewImpresa,
   setShowNewImpresa,
   setActiveImpresa,
   setActiveTab,
@@ -107,6 +174,46 @@ export function CantierePage({
     setPage("impresa");
   };
 
+  const handleOpenNewImpresa = () => {
+    setEditImpresa(null);
+    setNewImpresa(EMPTY_IMPRESA_FORM);
+    if (typeof setShowNewImpresa === "function") {
+      setShowNewImpresa(true);
+    }
+  };
+
+  const handleCloseNewImpresa = () => {
+    if (typeof setShowNewImpresa === "function") {
+      setShowNewImpresa(false);
+    }
+  };
+
+  const handleCreateImpresa = async () => {
+    try {
+      const created = await createImpresa(c.id, newImpresa);
+      setCantieri(prev =>
+        prev.map(cant =>
+          cant.id !== c.id ? cant : { ...cant, imprese: [...cant.imprese, created] }
+        )
+      );
+      setNewImpresa(EMPTY_IMPRESA_FORM);
+      handleCloseNewImpresa();
+    } catch (err) {
+      console.error("Errore creazione impresa:", err?.message || err);
+      setCantieri(prev =>
+        prev.map(cant =>
+          cant.id !== c.id
+            ? cant
+            : { ...cant, imprese: [...cant.imprese, { ...mkImpresa(), ...newImpresa }] }
+        )
+      );
+      setNewImpresa(EMPTY_IMPRESA_FORM);
+      handleCloseNewImpresa();
+    }
+  };
+
+  const isNewImpresaOpen = showNewImpresa === true;
+
   const statusKeys = ["idoneo", "parziale", "non idoneo", "da verificare"];
 
   return (
@@ -158,7 +265,7 @@ export function CantierePage({
             <button
               type="button"
               className="cantiere-btn-primary cantiere-btn-new"
-              onClick={() => setShowNewImpresa(true)}
+              onClick={handleOpenNewImpresa}
             >
               + Nuova impresa
             </button>
@@ -186,7 +293,7 @@ export function CantierePage({
               <button
                 type="button"
                 className="cantiere-btn-primary"
-                onClick={() => setShowNewImpresa(true)}
+                onClick={handleOpenNewImpresa}
               >
                 + Nuova impresa
               </button>
@@ -258,52 +365,25 @@ export function CantierePage({
         </div>
       </div>
 
-      {editImpresa && (
-        <div
-          className="cantiere-modal-overlay"
-          onClick={() => setEditImpresa(null)}
-        >
-          <div
-            className="cantiere-modal"
-            onClick={e => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="cantiere-modal-title"
-          >
-            <div className="cantiere-modal-head">
-              <h2 id="cantiere-modal-title" className="cantiere-modal-title">
-                Modifica impresa
-              </h2>
-              <button
-                type="button"
-                className="cantiere-modal-close"
-                onClick={() => setEditImpresa(null)}
-                aria-label="Chiudi"
-              >
-                ×
-              </button>
-            </div>
-            <div className="cantiere-modal-body">
-              <CantiereField
-                label="Ragione sociale"
-                value={editForm.nome}
-                onChange={v => setEditForm(p => ({ ...p, nome: v }))}
-              />
-              <CantiereField
-                label="Attività svolta"
-                value={editForm.attivita}
-                onChange={v => setEditForm(p => ({ ...p, attivita: v }))}
-              />
-              <button
-                type="button"
-                className="cantiere-btn-primary cantiere-btn-full"
-                onClick={handleSaveEdit}
-              >
-                Salva modifiche
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {isNewImpresaOpen ? (
+        <ImpresaFormModal
+          mode="create"
+          form={newImpresa || EMPTY_IMPRESA_FORM}
+          setForm={setNewImpresa}
+          onClose={handleCloseNewImpresa}
+          onSubmit={handleCreateImpresa}
+        />
+      ) : null}
+
+      {editImpresa ? (
+        <ImpresaFormModal
+          mode="edit"
+          form={editForm}
+          setForm={setEditForm}
+          onClose={() => setEditImpresa(null)}
+          onSubmit={handleSaveEdit}
+        />
+      ) : null}
 
       <style jsx>{`
         .cantiere-page {
@@ -661,7 +741,7 @@ export function CantierePage({
           color: #64748b;
         }
 
-        .cantiere-modal-overlay {
+        :global(.cantiere-modal-overlay) {
           position: fixed;
           inset: 0;
           z-index: 50;
@@ -669,93 +749,179 @@ export function CantierePage({
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: rgba(15, 23, 42, 0.52);
-          backdrop-filter: blur(4px);
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(6px);
         }
 
-        .cantiere-modal {
+        :global(.cantiere-modal) {
           width: 100%;
-          max-width: 520px;
+          max-width: 560px;
           max-height: 90vh;
-          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
           border-radius: 24px;
           border: 1px solid #e2e8f0;
           background: #ffffff;
-          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+          box-shadow:
+            0 25px 50px -12px rgba(15, 23, 42, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.08);
         }
 
-        .cantiere-modal-head {
+        :global(.cantiere-modal-head) {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
-          gap: 12px;
-          padding: 22px 26px;
+          gap: 16px;
+          padding: 24px 24px 20px;
           border-bottom: 1px solid #f1f5f9;
+          flex-shrink: 0;
         }
 
-        .cantiere-modal-title {
+        :global(.cantiere-modal-head-text) {
+          min-width: 0;
+        }
+
+        :global(.cantiere-modal-title) {
           margin: 0;
-          font-size: 18px;
-          font-weight: 900;
-          color: #020617;
-        }
-
-        .cantiere-modal-close {
-          width: 36px;
-          height: 36px;
-          border: 0;
-          border-radius: 10px;
-          background: #f8fafc;
-          color: #64748b;
-          font-size: 22px;
-          line-height: 1;
-          cursor: pointer;
-          transition: background 0.18s ease, color 0.18s ease;
-        }
-
-        .cantiere-modal-close:hover {
-          background: #f1f5f9;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
           color: #0f172a;
         }
 
-        .cantiere-modal-body {
-          padding: 22px 26px 26px;
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
+        :global(.cantiere-modal-sub) {
+          margin: 6px 0 0;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.45;
+          color: #64748b;
         }
 
-        .cantiere-field {
-          display: flex;
-          flex-direction: column;
+        :global(.cantiere-modal-close) {
+          width: 32px;
+          height: 32px;
+          flex-shrink: 0;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #ffffff;
+          color: #64748b;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
         }
 
-        .cantiere-label {
-          margin-bottom: 7px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
+        :global(.cantiere-modal-close:hover) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          color: #0f172a;
+        }
+
+        :global(.cantiere-modal-body) {
+          padding: 20px 24px 24px;
+          overflow-y: auto;
+          flex: 1;
+          min-height: 0;
+        }
+
+        :global(.cantiere-modal-section-title) {
+          margin: 0 0 14px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.02em;
+        }
+
+        :global(.cantiere-modal-fields) {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        :global(.cantiere-modal-foot) {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 16px 24px 20px;
+          border-top: 1px solid #e2e8f0;
+          background: #fafbfc;
+          flex-shrink: 0;
+        }
+
+        :global(.cantiere-modal-btn-primary),
+        :global(.cantiere-modal-btn-secondary) {
+          height: 46px;
+          padding: 0 18px;
+          border-radius: 14px;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            box-shadow 0.15s ease;
+        }
+
+        :global(.cantiere-modal-btn-primary) {
+          border: 1px solid #1d4ed8;
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+        }
+
+        :global(.cantiere-modal-btn-primary:hover) {
+          background: #1d4ed8;
+          border-color: #1e40af;
+        }
+
+        :global(.cantiere-modal-btn-secondary) {
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
           color: #475569;
         }
 
-        .cantiere-input {
+        :global(.cantiere-modal-btn-secondary:hover) {
+          background: #f8fafc;
+          border-color: #94a3b8;
+          color: #0f172a;
+        }
+
+        :global(.cantiere-field) {
+          display: flex;
+          flex-direction: column;
+        }
+
+        :global(.cantiere-label) {
+          margin-bottom: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #334155;
+        }
+
+        :global(.cantiere-input) {
           width: 100%;
           height: 48px;
           box-sizing: border-box;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #cbd5e1;
           border-radius: 14px;
           background: #ffffff;
           padding: 0 14px;
           font-size: 14px;
           color: #0f172a;
           outline: none;
-          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .cantiere-input:focus {
+        :global(.cantiere-input:focus) {
           border-color: #2563eb;
-          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
         }
 
         .cantiere-btn-full {
@@ -810,6 +976,16 @@ export function CantierePage({
           .cantiere-btn-open,
           .cantiere-btn-neutral,
           .cantiere-btn-danger {
+            width: 100%;
+          }
+
+          :global(.cantiere-modal-foot) {
+            flex-direction: column-reverse;
+            align-items: stretch;
+          }
+
+          :global(.cantiere-modal-btn-primary),
+          :global(.cantiere-modal-btn-secondary) {
             width: 100%;
           }
         }
