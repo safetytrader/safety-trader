@@ -61,3 +61,22 @@ export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
+
+export async function resetPassword(email: string) {
+  if (typeof window === "undefined") {
+    throw new Error("resetPassword è disponibile solo lato client.");
+  }
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function updatePassword(newPassword: string) {
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+  if (error) throw error;
+  return data;
+}

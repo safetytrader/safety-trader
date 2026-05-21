@@ -214,6 +214,14 @@ export default function LoginPage() {
                 />
               </div>
 
+              {!registerMode ? (
+                <p className="forgot-link-wrap">
+                  <Link href="/forgot-password" className="forgot-link">
+                    Password dimenticata?
+                  </Link>
+                </p>
+              ) : null}
+
               {registerMode ? (
                 <div className="profile-section">
                   <div className="profile-section-head">Dati profilo</div>
@@ -666,6 +674,25 @@ export default function LoginPage() {
           border: 1px solid #bbf7d0;
           background: #f0fdf4;
           color: #15803d;
+        }
+
+        .forgot-link-wrap {
+          margin: 4px 0 0;
+          text-align: right;
+        }
+
+        .forgot-link {
+          font-size: 12px;
+          font-weight: 700;
+          color: #64748b;
+          text-decoration: none;
+          transition: color 0.18s ease;
+        }
+
+        .forgot-link:hover {
+          color: #2563eb;
+          text-decoration: underline;
+          text-underline-offset: 3px;
         }
 
         .form-group {
