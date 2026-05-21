@@ -64,15 +64,17 @@ export function ImpresaPage({
               <div className="impresa-export-wrap">
                 <button
                   type="button"
-                  onClick={() => setShowExport(v => !v)}
+                  onClick={() => setShowExport(true)}
                   className="impresa-export-btn"
+                  aria-expanded={showExport}
+                  aria-haspopup="dialog"
                 >
                   Esporta
                 </button>
-                {showExport && (
-                  <ExportMenu cantiere={c} imp={imp} onClose={() => setShowExport(false)} />
-                )}
               </div>
+              {showExport && (
+                <ExportMenu cantiere={c} imp={imp} onClose={() => setShowExport(false)} />
+              )}
             </div>
           }
         />
