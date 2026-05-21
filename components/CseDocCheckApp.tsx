@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { getCurrentUser, signOut } from "@/lib/auth";
 import { createCantiere, createImpresa, getCantieriApp, replaceMaestranzeImpresa, uploadDocumentForImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
@@ -44,7 +45,13 @@ import { ImpresaPage } from "@/components/pages/ImpresaPage";
 import { emptyMaestranza, MaestranzaFormFields } from "@/components/impresa/MaestranzeTab";
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
+function isMissingAuthSessionMessage(message) {
+  const msg = (message ?? "").toLowerCase();
+  return msg.includes("auth session missing") || msg.includes("session missing");
+}
+
 export default function App() {
+  const router = useRouter();
   const [users, setUsers] = useState([]);
   const [user, setUser] = useState({ id: 1, nome: "Demo", cognome: "User", ruolo: "CSE", email: "" });
   const [page, setPage] = useState("dashboard");
@@ -52,21 +59,30 @@ export default function App() {
   const [authUser, setAuthUser] = useState(null);
   useEffect(() => {
     (async () => {
+      let auth = null;
       try {
-        const auth = await getCurrentUser();
+        auth = await getCurrentUser();
         setAuthUser(auth);
       } catch {
         setAuthUser(null);
       }
       try {
         const data = await getCantieriApp();
-        setCantieri(data);
+        setCantieri(data ?? []);
       } catch (err) {
-        console.error("Errore caricamento cantieri:", err?.message || err);
-        setCantieri(loadFromStorage(STORAGE_KEYS.cantieri, []));
+        const message = err?.message || String(err);
+        if (isMissingAuthSessionMessage(message)) {
+          setCantieri([]);
+        } else {
+          console.error("Errore caricamento cantieri:", message);
+          setCantieri(loadFromStorage(STORAGE_KEYS.cantieri, []));
+        }
+      }
+      if (!auth) {
+        router.replace("/login");
       }
     })();
-  }, []);
+  }, [router]);
   
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.cantieri, cantieri);

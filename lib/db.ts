@@ -482,18 +482,21 @@ export async function deleteImpresaDb(impresaId) {
   }
 }
 
+function isMissingAuthSession(error) {
+  const msg = (error?.message ?? "").toLowerCase();
+  return msg.includes("auth session missing") || msg.includes("session missing");
+}
+
 export async function getCantieriApp() {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError) {
+    if (isMissingAuthSession(authError)) return [];
     console.error("Errore caricamento cantieri (auth):", authError.message);
     throw new Error(authError.message);
   }
 
   const user = authData?.user;
-  if (!user?.id) {
-    console.error("Caricamento cantieri: utente non loggato");
-    return [];
-  }
+  if (!user?.id) return [];
 
   const { data, error } = await supabase
     .from("cantieri")

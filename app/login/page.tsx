@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn, signUp } from "@/lib/auth";
 
@@ -63,7 +64,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+    <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h1 className="mb-1 text-2xl font-bold text-slate-800">Accedi</h1>
         <p className="mb-6 text-sm text-slate-500">Autenticazione Supabase (email e password)</p>
@@ -122,6 +123,14 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+      <p className="mt-6 text-center">
+        <Link
+          href="/privacy"
+          className="text-xs text-slate-500 hover:text-slate-700 transition"
+        >
+          Privacy e note legali
+        </Link>
+      </p>
     </main>
   );
 }

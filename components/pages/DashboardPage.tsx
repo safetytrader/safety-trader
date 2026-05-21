@@ -6,6 +6,8 @@
 
 import { useState } from "react";
 
+import Link from "next/link";
+
 import { AppHeader } from "@/components/layout/AppHeader";
 
 import { STATUS_COLORS } from "@/lib/constants";
@@ -172,6 +174,15 @@ export function DashboardPage({ cantieri, setCantieri, user, setNewCantiere, set
           })}</div>
 
         )}
+
+        <footer className="mt-12 pb-4 text-center">
+          <Link
+            href="/privacy"
+            className="text-xs text-slate-400 hover:text-slate-600 transition"
+          >
+            Privacy e note legali
+          </Link>
+        </footer>
 
       </div>
 
