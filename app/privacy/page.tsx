@@ -151,6 +151,13 @@ export default function PrivacyPage() {
         </div>
 
         <article className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <img src="/logo.svg" alt="Safety Trader" width={40} height={40} className="rounded-lg flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Safety Trader</p>
+              <p className="text-xs text-slate-500">D.Lgs. 81/2008</p>
+            </div>
+          </div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">Privacy e note legali</h1>
           <p className="text-sm text-slate-500 mb-8">
             Safety Trader D.Lgs. 81/2008 — informativa provvisoria. Ultimo aggiornamento: maggio 2026.

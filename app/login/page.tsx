@@ -66,7 +66,14 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="mb-1 text-2xl font-bold text-slate-800">Accedi</h1>
+        <div className="mb-6 flex items-center gap-3">
+          <img src="/logo.svg" alt="" width={44} height={44} className="rounded-lg flex-shrink-0" aria-hidden />
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">Safety Trader</h1>
+            <p className="text-sm text-slate-500">D.Lgs. 81/2008</p>
+          </div>
+        </div>
+        <h2 className="mb-1 text-lg font-semibold text-slate-800">Accedi</h2>
         <p className="mb-6 text-sm text-slate-500">Autenticazione Supabase (email e password)</p>
 
         <div className="space-y-4">
