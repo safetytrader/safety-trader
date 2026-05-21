@@ -2,163 +2,855 @@
 
 "use client";
 
-
-
 import { useState } from "react";
-
 import { AppHeader } from "@/components/layout/AppHeader";
-
 import { BackButton } from "@/components/ui/BackButton";
-
-import { EmptyState } from "@/components/ui/EmptyState";
-
-import { Modal } from "@/components/ui/Modal";
-
-import { Field } from "@/components/ui/Field";
-
-import { PrimaryButton } from "@/components/ui/PrimaryButton";
-
 import { CHECKLIST_ITEMS, STATUS_COLORS, BADGE } from "@/lib/constants";
-
 import { calcStatus } from "@/lib/utils";
-
 import { updateImpresaDb, deleteImpresaDb } from "@/lib/db";
 
+function CantiereField({ label, value, onChange }) {
+  return (
+    <div className="cantiere-field">
+      <label className="cantiere-label">{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="cantiere-input"
+      />
+    </div>
+  );
+}
 
-
-export function CantierePage({ c, setCantieri, user, setPage, setShowNewImpresa, setActiveImpresa, setActiveTab }) {
-
+export function CantierePage({
+  c,
+  setCantieri,
+  user,
+  setPage,
+  setShowNewImpresa,
+  setActiveImpresa,
+  setActiveTab,
+}) {
   const [editImpresa, setEditImpresa] = useState(null);
-
   const [editForm, setEditForm] = useState({ nome: "", attivita: "" });
 
-
+  const totImprese = c.imprese.length;
 
   const openEdit = (imp, e) => {
-
     e.stopPropagation();
-
     setEditImpresa(imp);
-
     setEditForm({ nome: imp.nome, attivita: imp.attivita });
-
   };
-
-
 
   const handleDelete = async (imp, e) => {
-
     e.stopPropagation();
-
     if (!window.confirm(`Eliminare l'impresa "${imp.nome}"?`)) return;
-
     try {
-
       await deleteImpresaDb(imp.id);
-
-      setCantieri(p => p.map(cant => (cant.id !== c.id ? cant : { ...cant, imprese: cant.imprese.filter(i => i.id !== imp.id) })));
-
+      setCantieri(p =>
+        p.map(cant =>
+          cant.id !== c.id
+            ? cant
+            : { ...cant, imprese: cant.imprese.filter(i => i.id !== imp.id) }
+        )
+      );
     } catch (err) {
-
       console.error("Errore eliminazione impresa:", err?.message || err);
-
-      setCantieri(p => p.map(cant => (cant.id !== c.id ? cant : { ...cant, imprese: cant.imprese.filter(i => i.id !== imp.id) })));
-
+      setCantieri(p =>
+        p.map(cant =>
+          cant.id !== c.id
+            ? cant
+            : { ...cant, imprese: cant.imprese.filter(i => i.id !== imp.id) }
+        )
+      );
     }
-
   };
-
-
 
   const handleSaveEdit = async () => {
-
     if (!editImpresa) return;
-
     try {
-
-      const updated = await updateImpresaDb(editImpresa.id, { ...editForm, note: editImpresa.note ?? "" }, editImpresa);
-
-      setCantieri(p => p.map(cant => (cant.id !== c.id ? cant : { ...cant, imprese: cant.imprese.map(i => (i.id === updated.id ? updated : i)) })));
-
+      const updated = await updateImpresaDb(
+        editImpresa.id,
+        { ...editForm, note: editImpresa.note ?? "" },
+        editImpresa
+      );
+      setCantieri(p =>
+        p.map(cant =>
+          cant.id !== c.id
+            ? cant
+            : { ...cant, imprese: cant.imprese.map(i => (i.id === updated.id ? updated : i)) }
+        )
+      );
       setEditImpresa(null);
-
     } catch (err) {
-
       console.error("Errore aggiornamento impresa:", err?.message || err);
-
-      setCantieri(p => p.map(cant => (cant.id !== c.id ? cant : { ...cant, imprese: cant.imprese.map(i => (i.id === editImpresa.id ? { ...i, ...editForm } : i)) })));
-
+      setCantieri(p =>
+        p.map(cant =>
+          cant.id !== c.id
+            ? cant
+            : {
+                ...cant,
+                imprese: cant.imprese.map(i =>
+                  i.id === editImpresa.id ? { ...i, ...editForm } : i
+                ),
+              }
+        )
+      );
       setEditImpresa(null);
-
     }
-
   };
 
+  const openImpresa = imp => {
+    setActiveImpresa(imp.id);
+    setActiveTab("upload");
+    setPage("impresa");
+  };
 
+  const statusKeys = ["idoneo", "parziale", "non idoneo", "da verificare"];
 
   return (
+    <>
+      <div className="cantiere-page">
+        <AppHeader
+          user={user}
+          left={<BackButton onClick={() => setPage("dashboard")} label="Dashboard" />}
+          title={c.nome}
+          sub={c.cse}
+        />
 
-    <div className="min-h-screen bg-slate-50">
+        <div className="cantiere-shell">
+          <nav className="cantiere-breadcrumb" aria-label="Breadcrumb">
+            <button
+              type="button"
+              className="cantiere-crumb-link"
+              onClick={() => setPage("dashboard")}
+            >
+              Dashboard
+            </button>
+            <span className="cantiere-crumb-sep">/</span>
+            <span className="cantiere-crumb-current">{c.nome}</span>
+          </nav>
 
-      <AppHeader user={user} left={<BackButton onClick={() => setPage("dashboard")} label="Dashboard" />} title={c.nome} sub={c.cse} right={<button onClick={() => setShowNewImpresa(true)} className="bg-blue-500 hover:bg-blue-400 text-white text-sm px-4 py-2 rounded-lg font-medium transition">+ Impresa</button>} />
+          <button
+            type="button"
+            className="cantiere-back"
+            onClick={() => setPage("dashboard")}
+          >
+            ← Torna alla dashboard
+          </button>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
-
-        <div className="grid grid-cols-4 gap-3 mb-6">{["idoneo", "parziale", "non idoneo", "da verificare"].map(s => <div key={s} className="bg-white rounded-xl border border-slate-100 p-3 text-center shadow-sm"><div className={`text-2xl font-bold ${s === "idoneo" ? "text-emerald-600" : s === "parziale" ? "text-amber-500" : s === "non idoneo" ? "text-red-500" : "text-slate-400"}`}>{c.imprese.filter(i => calcStatus(i.checks) === s).length}</div><div className="text-xs text-slate-500 capitalize">{s}</div></div>)}</div>
-
-        <div className="space-y-3">{c.imprese.map(imp => {
-
-          const st = calcStatus(imp.checks), done = CHECKLIST_ITEMS.filter(i => i.required && imp.checks[i.id] === "si").length, tot = CHECKLIST_ITEMS.filter(i => i.required).length;
-
-          return (
-
-            <div key={imp.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition cursor-pointer" onClick={() => { setActiveImpresa(imp.id); setActiveTab("upload"); setPage("impresa"); }}>
-
-              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${STATUS_COLORS[st]}`} />
-
-              <div className="flex-1 min-w-0"><div className="font-semibold text-slate-800 text-sm truncate">{imp.nome}</div><div className="text-xs text-slate-500">{imp.attivita}</div></div>
-
-              <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-
-                <button type="button" onClick={e => openEdit(imp, e)} className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition">Modifica</button>
-
-                <button type="button" onClick={e => handleDelete(imp, e)} className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 transition">Elimina</button>
-
+          <section className="cantiere-hero">
+            <div className="cantiere-hero-main">
+              <h1 className="cantiere-hero-title">{c.nome}</h1>
+              <p className="cantiere-hero-address">{c.indirizzo || "—"}</p>
+              <div className="cantiere-chips">
+                <span className="cantiere-chip">Ruolo: {c.cse || "—"}</span>
+                <span className="cantiere-chip">Inizio: {c.dataInizio || "—"}</span>
+                <span className="cantiere-chip cantiere-chip-blue">
+                  {totImprese} impres{totImprese === 1 ? "a" : "e"}
+                </span>
               </div>
-
-              <div className="flex items-center gap-3">{imp.uploadedFiles?.length > 0 && <span className="text-xs text-slate-400">📎{imp.uploadedFiles.length}</span>}<span className="text-xs text-slate-500">{done}/{tot}</span><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${BADGE[st]}`}>{st}</span><span className="text-slate-300">›</span></div>
-
+              <p className="cantiere-hero-text">
+                Gestione imprese, documenti e scadenze del cantiere.
+              </p>
             </div>
+            <button
+              type="button"
+              className="cantiere-btn-primary cantiere-btn-new"
+              onClick={() => setShowNewImpresa(true)}
+            >
+              + Nuova impresa
+            </button>
+          </section>
 
-          );
+          <section className="cantiere-stats">
+            {statusKeys.map(s => {
+              const count = c.imprese.filter(i => calcStatus(i.checks) === s).length;
+              return (
+                <div key={s} className={`cantiere-stat cantiere-stat-${s.replace(/\s/g, "-")}`}>
+                  <span className="cantiere-stat-value">{count}</span>
+                  <span className="cantiere-stat-label">{s}</span>
+                </div>
+              );
+            })}
+          </section>
 
-        })}</div>
+          {totImprese === 0 ? (
+            <section className="cantiere-empty">
+              <div className="cantiere-empty-mark">+</div>
+              <h2 className="cantiere-empty-title">Nessuna impresa presente</h2>
+              <p className="cantiere-empty-text">
+                Aggiungi la prima impresa per iniziare la verifica documentale.
+              </p>
+              <button
+                type="button"
+                className="cantiere-btn-primary"
+                onClick={() => setShowNewImpresa(true)}
+              >
+                + Nuova impresa
+              </button>
+            </section>
+          ) : (
+            <section className="cantiere-grid">
+              {c.imprese.map(imp => {
+                const st = calcStatus(imp.checks);
+                const done = CHECKLIST_ITEMS.filter(
+                  i => i.required && imp.checks[i.id] === "si"
+                ).length;
+                const tot = CHECKLIST_ITEMS.filter(i => i.required).length;
+                const docs = imp.uploadedFiles?.length || 0;
 
-        {c.imprese.length === 0 && <EmptyState icon="🏢" title="Nessuna impresa" sub="Aggiungi le imprese esecutrici" />}
+                return (
+                  <article key={imp.id} className="cantiere-card">
+                    <div className="cantiere-card-head">
+                      <span className={`cantiere-status-dot ${STATUS_COLORS[st]}`} />
+                      <span className={`cantiere-status-badge ${BADGE[st]}`}>{st}</span>
+                    </div>
 
+                    <h2 className="cantiere-card-title">{imp.nome}</h2>
+                    <p className="cantiere-card-activity">{imp.attivita || "—"}</p>
+
+                    {imp.note ? (
+                      <p className="cantiere-card-note">{imp.note}</p>
+                    ) : null}
+
+                    <div className="cantiere-card-meta">
+                      {docs > 0 && (
+                        <span className="cantiere-meta-item">📎 {docs} documenti</span>
+                      )}
+                      <span className="cantiere-meta-item">
+                        Check-list {done}/{tot}
+                      </span>
+                    </div>
+
+                    <div
+                      className="cantiere-actions"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="cantiere-btn-open"
+                        onClick={() => openImpresa(imp)}
+                      >
+                        Apri
+                      </button>
+                      <button
+                        type="button"
+                        className="cantiere-btn-neutral"
+                        onClick={e => openEdit(imp, e)}
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        type="button"
+                        className="cantiere-btn-danger"
+                        onClick={e => handleDelete(imp, e)}
+                      >
+                        Elimina
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          )}
+        </div>
       </div>
 
       {editImpresa && (
-
-        <Modal title="Modifica impresa" onClose={() => setEditImpresa(null)}>
-
-          <div className="space-y-3">
-
-            <Field label="Ragione sociale" value={editForm.nome} onChange={v => setEditForm(p => ({ ...p, nome: v }))} />
-
-            <Field label="Attività svolta" value={editForm.attivita} onChange={v => setEditForm(p => ({ ...p, attivita: v }))} />
-
-            <PrimaryButton onClick={handleSaveEdit}>Salva modifiche</PrimaryButton>
-
+        <div
+          className="cantiere-modal-overlay"
+          onClick={() => setEditImpresa(null)}
+        >
+          <div
+            className="cantiere-modal"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="cantiere-modal-title"
+          >
+            <div className="cantiere-modal-head">
+              <h2 id="cantiere-modal-title" className="cantiere-modal-title">
+                Modifica impresa
+              </h2>
+              <button
+                type="button"
+                className="cantiere-modal-close"
+                onClick={() => setEditImpresa(null)}
+                aria-label="Chiudi"
+              >
+                ×
+              </button>
+            </div>
+            <div className="cantiere-modal-body">
+              <CantiereField
+                label="Ragione sociale"
+                value={editForm.nome}
+                onChange={v => setEditForm(p => ({ ...p, nome: v }))}
+              />
+              <CantiereField
+                label="Attività svolta"
+                value={editForm.attivita}
+                onChange={v => setEditForm(p => ({ ...p, attivita: v }))}
+              />
+              <button
+                type="button"
+                className="cantiere-btn-primary cantiere-btn-full"
+                onClick={handleSaveEdit}
+              >
+                Salva modifiche
+              </button>
+            </div>
           </div>
-
-        </Modal>
-
+        </div>
       )}
 
-    </div>
+      <style jsx>{`
+        .cantiere-page {
+          min-height: 100vh;
+          background: #f8fafc;
+          color: #0f172a;
+          font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
 
+        .cantiere-shell {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 20px 32px 40px;
+        }
+
+        .cantiere-breadcrumb {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+          font-size: 13px;
+          margin-bottom: 10px;
+        }
+
+        .cantiere-crumb-link {
+          border: 0;
+          background: none;
+          padding: 0;
+          color: #64748b;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: color 0.18s ease;
+        }
+
+        .cantiere-crumb-link:hover {
+          color: #2563eb;
+        }
+
+        .cantiere-crumb-sep {
+          color: #cbd5e1;
+          font-weight: 600;
+        }
+
+        .cantiere-crumb-current {
+          color: #0f172a;
+          font-weight: 800;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .cantiere-back {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 20px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #475569;
+          border-radius: 12px;
+          padding: 8px 14px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+        }
+
+        .cantiere-back:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          color: #0f172a;
+        }
+
+        .cantiere-hero {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 28px 30px;
+          margin-bottom: 18px;
+          border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+          box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
+        }
+
+        .cantiere-hero-main {
+          max-width: 680px;
+        }
+
+        .cantiere-hero-title {
+          margin: 0;
+          font-size: clamp(24px, 3vw, 32px);
+          font-weight: 900;
+          letter-spacing: -0.04em;
+          color: #020617;
+          line-height: 1.08;
+        }
+
+        .cantiere-hero-address {
+          margin: 8px 0 0;
+          font-size: 14px;
+          line-height: 1.55;
+          color: #64748b;
+        }
+
+        .cantiere-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 14px;
+        }
+
+        .cantiere-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 10px;
+          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          font-size: 11px;
+          font-weight: 700;
+          color: #334155;
+        }
+
+        .cantiere-chip-blue {
+          border-color: #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+        }
+
+        .cantiere-hero-text {
+          margin: 14px 0 0;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #475569;
+        }
+
+        .cantiere-btn-primary {
+          border: 0;
+          border-radius: 16px;
+          background: #2563eb;
+          color: #ffffff;
+          padding: 12px 20px;
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          box-shadow: 0 14px 30px rgba(37, 99, 235, 0.22);
+          transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .cantiere-btn-primary:hover {
+          background: #1d4ed8;
+          transform: translateY(-1px);
+          box-shadow: 0 18px 36px rgba(37, 99, 235, 0.28);
+        }
+
+        .cantiere-btn-new {
+          flex-shrink: 0;
+        }
+
+        .cantiere-stats {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 22px;
+        }
+
+        .cantiere-stat {
+          padding: 16px 14px;
+          border-radius: 18px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          text-align: center;
+          box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+        }
+
+        .cantiere-stat-value {
+          display: block;
+          font-size: 26px;
+          font-weight: 900;
+          line-height: 1;
+          letter-spacing: -0.03em;
+        }
+
+        .cantiere-stat-label {
+          display: block;
+          margin-top: 6px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: capitalize;
+        }
+
+        .cantiere-stat-idoneo .cantiere-stat-value {
+          color: #059669;
+        }
+
+        .cantiere-stat-parziale .cantiere-stat-value {
+          color: #d97706;
+        }
+
+        .cantiere-stat-non-idoneo .cantiere-stat-value {
+          color: #dc2626;
+        }
+
+        .cantiere-stat-da-verificare .cantiere-stat-value {
+          color: #94a3b8;
+        }
+
+        .cantiere-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 18px;
+        }
+
+        .cantiere-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 24px;
+          padding: 24px;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          display: flex;
+          flex-direction: column;
+          min-height: 100%;
+        }
+
+        .cantiere-card:hover {
+          transform: translateY(-2px);
+          border-color: #cbd5e1;
+          box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
+        }
+
+        .cantiere-card-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .cantiere-status-dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 999px;
+          flex-shrink: 0;
+        }
+
+        .cantiere-status-badge {
+          font-size: 10px;
+          font-weight: 800;
+          padding: 4px 8px;
+          border-radius: 999px;
+          text-transform: capitalize;
+        }
+
+        .cantiere-card-title {
+          margin: 0;
+          font-size: 17px;
+          font-weight: 900;
+          letter-spacing: -0.03em;
+          color: #020617;
+          line-height: 1.25;
+        }
+
+        .cantiere-card-activity {
+          margin: 8px 0 0;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #64748b;
+        }
+
+        .cantiere-card-note {
+          margin: 10px 0 0;
+          font-size: 12px;
+          line-height: 1.5;
+          color: #94a3b8;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        .cantiere-card-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 14px;
+        }
+
+        .cantiere-meta-item {
+          font-size: 11px;
+          font-weight: 700;
+          color: #475569;
+          padding: 5px 8px;
+          border-radius: 8px;
+          background: #f8fafc;
+          border: 1px solid #f1f5f9;
+        }
+
+        .cantiere-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: auto;
+          padding-top: 18px;
+        }
+
+        .cantiere-btn-open,
+        .cantiere-btn-neutral,
+        .cantiere-btn-danger {
+          border-radius: 12px;
+          padding: 9px 14px;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+        }
+
+        .cantiere-btn-open {
+          border: 0;
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 8px 18px rgba(37, 99, 235, 0.2);
+        }
+
+        .cantiere-btn-open:hover {
+          background: #1d4ed8;
+        }
+
+        .cantiere-btn-neutral {
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #334155;
+        }
+
+        .cantiere-btn-neutral:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+
+        .cantiere-btn-danger {
+          border: 1px solid #fecaca;
+          background: #ffffff;
+          color: #dc2626;
+        }
+
+        .cantiere-btn-danger:hover {
+          background: #fef2f2;
+          border-color: #fca5a5;
+        }
+
+        .cantiere-empty {
+          max-width: 520px;
+          margin: 32px auto 0;
+          padding: 48px 36px;
+          text-align: center;
+          border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+        }
+
+        .cantiere-empty-mark {
+          width: 56px;
+          height: 56px;
+          margin: 0 auto 18px;
+          border-radius: 18px;
+          background: #0f172a;
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 28px;
+          font-weight: 300;
+          line-height: 1;
+        }
+
+        .cantiere-empty-title {
+          margin: 0;
+          font-size: 22px;
+          font-weight: 900;
+          color: #020617;
+        }
+
+        .cantiere-empty-text {
+          margin: 10px 0 24px;
+          font-size: 14px;
+          line-height: 1.65;
+          color: #64748b;
+        }
+
+        .cantiere-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(15, 23, 42, 0.52);
+          backdrop-filter: blur(4px);
+        }
+
+        .cantiere-modal {
+          width: 100%;
+          max-width: 520px;
+          max-height: 90vh;
+          overflow-y: auto;
+          border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+        }
+
+        .cantiere-modal-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 22px 26px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        .cantiere-modal-title {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 900;
+          color: #020617;
+        }
+
+        .cantiere-modal-close {
+          width: 36px;
+          height: 36px;
+          border: 0;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #64748b;
+          font-size: 22px;
+          line-height: 1;
+          cursor: pointer;
+          transition: background 0.18s ease, color 0.18s ease;
+        }
+
+        .cantiere-modal-close:hover {
+          background: #f1f5f9;
+          color: #0f172a;
+        }
+
+        .cantiere-modal-body {
+          padding: 22px 26px 26px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .cantiere-field {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .cantiere-label {
+          margin-bottom: 7px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #475569;
+        }
+
+        .cantiere-input {
+          width: 100%;
+          height: 48px;
+          box-sizing: border-box;
+          border: 1px solid #dbe3ef;
+          border-radius: 14px;
+          background: #ffffff;
+          padding: 0 14px;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .cantiere-input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
+        .cantiere-btn-full {
+          width: 100%;
+          margin-top: 6px;
+        }
+
+        @media (max-width: 1024px) {
+          .cantiere-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 720px) {
+          .cantiere-shell {
+            padding-left: 24px;
+            padding-right: 24px;
+          }
+
+          .cantiere-hero {
+            padding: 22px;
+          }
+
+          .cantiere-stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .cantiere-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .cantiere-shell {
+            padding-left: 20px;
+            padding-right: 20px;
+          }
+
+          .cantiere-hero {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .cantiere-btn-new {
+            width: 100%;
+          }
+
+          .cantiere-actions {
+            flex-direction: column;
+          }
+
+          .cantiere-btn-open,
+          .cantiere-btn-neutral,
+          .cantiere-btn-danger {
+            width: 100%;
+          }
+        }
+      `}</style>
+    </>
   );
-
 }
-
