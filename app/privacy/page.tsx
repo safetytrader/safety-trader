@@ -1,184 +1,456 @@
-import Link from "next/link";
+// @ts-nocheck
+"use client";
 
-const sections = [
-  {
-    title: "Titolare del trattamento",
-    body: (
-      <>
-        <p>
-          Il titolare del trattamento dei dati personali relativi all&apos;utilizzo dell&apos;applicazione{" "}
-          <strong>Safety Trader D.Lgs. 81/2008</strong> è:
-        </p>
-        <p className="mt-2">
-          <strong>Alexandru Bogdan</strong>
-          <br />
-          Email:{" "}
-          <a href="mailto:ialexandrubogdan@gmail.com" className="text-blue-600 hover:underline">
-            ialexandrubogdan@gmail.com
-          </a>
-        </p>
-      </>
-    ),
-  },
-  {
-    title: "Tipologia di dati trattati",
-    body: (
-      <ul className="list-disc pl-5 space-y-1">
-        <li>Dati di autenticazione (email, credenziali di accesso gestite tramite Supabase Auth).</li>
-        <li>Dati anagrafici e professionali inseriti dall&apos;utente (es. nome, cognome, ruolo).</li>
-        <li>Dati relativi a cantieri, imprese, maestranze, checklist e allegati documentali caricati o generati nell&apos;app.</li>
-        <li>Metadati tecnici (log di accesso, timestamp, identificativi di sessione) necessari al funzionamento del servizio.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Finalità del trattamento",
-    body: (
-      <ul className="list-disc pl-5 space-y-1">
-        <li>Gestione dell&apos;accesso e dell&apos;account utente.</li>
-        <li>Organizzazione e verifica documentale in ambito cantieri, imprese e sicurezza sul lavoro (D.Lgs. 81/2008).</li>
-        <li>Archiviazione e consultazione dei documenti caricati dall&apos;utente.</li>
-        <li>Eventuale elaborazione tramite funzionalità AI, solo se e quando attivate dall&apos;utente o dal servizio.</li>
-        <li>Assistenza, manutenzione e miglioramento del servizio.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Base giuridica",
-    body: (
-      <p>
-        Il trattamento si basa sull&apos;esecuzione del contratto o del rapporto con l&apos;utente (art. 6, par. 1, lett. b GDPR),
-        sul legittimo interesse del titolare a garantire sicurezza e funzionamento della piattaforma (lett. f), e, ove applicabile,
-        sull&apos;obbligo di legge in materia di sicurezza sul lavoro e documentazione (lett. c).
-      </p>
-    ),
-  },
-  {
-    title: "Modalità di trattamento e conservazione",
-    body: (
-      <p>
-        I dati sono trattati con strumenti informatici e telematici, nel rispetto delle misure di sicurezza adeguate.
-        La conservazione avviene per il tempo necessario alle finalità indicate e, per i documenti caricati,
-        per la durata dell&apos;utilizzo del servizio e secondo le esigenze operative dell&apos;utente.
-        I documenti possono essere eliminati dall&apos;utente o su richiesta, nei limiti tecnici del servizio.
-      </p>
-    ),
-  },
-  {
-    title: "Servizi terzi utilizzati",
-    body: (
-      <ul className="list-disc pl-5 space-y-1">
-        <li>
-          <strong>Supabase</strong> — autenticazione, database e storage documentale.
-        </li>
-        <li>
-          <strong>Vercel</strong> — hosting e distribuzione dell&apos;applicazione web.
-        </li>
-        <li>
-          <strong>OpenAI</strong> — utilizzato solo per eventuali funzionalità AI future o opzionali, se attivate.
-        </li>
-      </ul>
-    ),
-  },
-  {
-    title: "Diritti dell'utente",
-    body: (
-      <p>
-        L&apos;utente può esercitare i diritti previsti dagli artt. 15–22 GDPR (accesso, rettifica, cancellazione, limitazione,
-        portabilità, opposizione) scrivendo al titolare all&apos;indirizzo email indicato. Ha inoltre il diritto di proporre
-        reclamo all&apos;Autorità Garante per la protezione dei dati personali.
-      </p>
-    ),
-  },
-  {
-    title: "Sicurezza",
-    body: (
-      <p>
-        Sono adottate misure tecniche e organizzative ragionevoli per proteggere i dati da accessi non autorizzati,
-        perdita o alterazione, inclusi accesso tramite autenticazione, comunicazioni cifrate (HTTPS) e controlli
-        sui servizi cloud utilizzati. L&apos;utente è responsabile della custodia delle proprie credenziali di accesso.
-      </p>
-    ),
-  },
-  {
-    title: "Note legali e limitazioni d'uso",
-    body: (
-      <>
-        <p className="mb-3">
-          <strong>Safety Trader</strong> è uno strumento di supporto operativo e documentale per la gestione
-          della documentazione in ambito cantieri e sicurezza sul lavoro. Non sostituisce e non esclude:
-        </p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>valutazioni professionali qualificate;</li>
-          <li>obblighi del datore di lavoro;</li>
-          <li>obblighi del CSE, RSPP o altre figure previste dalla normativa;</li>
-          <li>verifiche normative puntuali su singoli casi;</li>
-          <li>responsabilità previste dal D.Lgs. 81/2008 e dalla normativa applicabile.</li>
-        </ul>
-        <p className="mt-3">
-          L&apos;uso dell&apos;applicazione non costituisce parere legale, tecnico o di conformità. L&apos;utente resta
-          responsabile dei dati inseriti, delle decisioni adottate e della verifica della documentazione.
-        </p>
-      </>
-    ),
-  },
-  {
-    title: "Contatti",
-    body: (
-      <p>
-        Per informazioni su privacy, note legali o esercizio dei diritti:{" "}
-        <a href="mailto:ialexandrubogdan@gmail.com" className="text-blue-600 hover:underline">
-          ialexandrubogdan@gmail.com
-        </a>
-        <br />
-        Titolare: Alexandru Bogdan
-      </p>
-    ),
-  },
-];
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
+function gestoreLabel(user) {
+  if (!user) return "Dati del professionista / società (da completare in Account)";
+  const m = user.user_metadata || {};
+  const nome = String(m.nome ?? "").trim();
+  const cognome = String(m.cognome ?? "").trim();
+  const societa = String(m.societa ?? "").trim();
+  const via = String(m.sede_via ?? "").trim();
+  const cap = String(m.sede_cap ?? "").trim();
+  const citta = String(m.sede_citta ?? "").trim();
+  const fullName = [nome, cognome].filter(Boolean).join(" ");
+  const sede = [via, cap, citta].filter(Boolean).join(", ");
+  const parts = [];
+  if (fullName) parts.push(fullName);
+  if (societa) parts.push(societa);
+  if (sede) parts.push(sede);
+  return parts.length ? parts.join(" · ") : "Dati del professionista / società (da completare in Account)";
+}
+
+function contactEmail(user) {
+  const email = String(user?.email ?? "").trim();
+  return email || "Email di contatto da completare";
+}
 
 export default function PrivacyPage() {
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!cancelled) setUser(data.session?.user ?? null);
+      } catch {
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const email = contactEmail(user);
+  const gestore = gestoreLabel(user);
+  const emailIsLink = Boolean(user?.email);
+
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <Link
-            href="/login"
-            className="text-sm text-slate-500 hover:text-slate-700 transition"
-          >
-            ← Torna al login
-          </Link>
+    <>
+      <main className="privacy-page">
+        <div className="privacy-shell">
+          <header className="privacy-hero">
+            <span className="privacy-badge">Privacy e note legali</span>
+            <h1 className="privacy-title">Informativa e condizioni d&apos;uso</h1>
+            <p className="privacy-lead">
+              Informazioni sul trattamento dei dati, sull&apos;utilizzo della piattaforma e
+              sulle responsabilità operative.
+            </p>
+          </header>
+
+          <div className="privacy-actions-top">
+            <Link href="/" className="privacy-btn privacy-btn-primary">
+              Torna alla dashboard
+            </Link>
+            {user ? (
+              <Link href="/account" className="privacy-btn privacy-btn-neutral">
+                Account
+              </Link>
+            ) : (
+              <Link href="/login" className="privacy-btn privacy-btn-neutral">
+                Accedi
+              </Link>
+            )}
+          </div>
+
+          <article className="privacy-card">
+            {loading ? (
+              <p className="privacy-loading">Caricamento informazioni…</p>
+            ) : (
+              <div className="privacy-sections">
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Titolare / Gestore della piattaforma</h2>
+                  <div className="privacy-body">
+                    <p>
+                      <strong>Safety Trader</strong> — piattaforma di supporto alla gestione
+                      documentale della sicurezza nei cantieri (D.Lgs. 81/2008).
+                    </p>
+                    <p>
+                      <strong>Gestore:</strong> {gestore}
+                    </p>
+                    <p>
+                      <strong>Email di contatto:</strong>{" "}
+                      {emailIsLink ? (
+                        <a href={`mailto:${email}`} className="privacy-link">
+                          {email}
+                        </a>
+                      ) : (
+                        <span>{email}</span>
+                      )}
+                    </p>
+                  </div>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Finalità della piattaforma</h2>
+                  <p className="privacy-body">
+                    Safety Trader è uno strumento digitale di supporto alla gestione documentale
+                    della sicurezza nei cantieri. La piattaforma consente di organizzare cantieri,
+                    imprese, checklist documentali, allegati, maestranze, scadenze e report.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Dati trattati</h2>
+                  <ul className="privacy-list">
+                    <li>Dati account: email, nome, cognome, società, sede.</li>
+                    <li>Dati di cantiere.</li>
+                    <li>Dati di imprese.</li>
+                    <li>Dati documentali.</li>
+                    <li>Dati relativi a maestranze.</li>
+                    <li>File caricati dall&apos;utente.</li>
+                  </ul>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Finalità del trattamento</h2>
+                  <ul className="privacy-list">
+                    <li>Autenticazione utenti.</li>
+                    <li>Gestione documentale.</li>
+                    <li>Archiviazione file.</li>
+                    <li>Generazione report.</li>
+                    <li>Controllo operativo delle scadenze.</li>
+                    <li>Miglioramento dell&apos;organizzazione documentale.</li>
+                  </ul>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Conservazione dei dati</h2>
+                  <p className="privacy-body">
+                    I dati e i documenti rimangono disponibili nella piattaforma fino alla loro
+                    eliminazione da parte dell&apos;utente o fino alla cessazione dell&apos;utilizzo
+                    del servizio, salvo obblighi di conservazione applicabili.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Responsabilità dell&apos;utente</h2>
+                  <p className="privacy-body">
+                    L&apos;utente è responsabile della correttezza, completezza e aggiornamento dei
+                    dati e dei documenti caricati nella piattaforma.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Limiti dello strumento</h2>
+                  <p className="privacy-body privacy-body-emphasis">
+                    Safety Trader costituisce uno strumento di supporto operativo e documentale. Non
+                    sostituisce le valutazioni professionali, le verifiche normative, gli obblighi
+                    del Datore di Lavoro, del Committente, del Responsabile dei Lavori, del CSP, del
+                    CSE, dell&apos;RSPP o degli altri soggetti previsti dalla normativa applicabile.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Documenti e file caricati</h2>
+                  <p className="privacy-body">
+                    I documenti caricati sono gestiti dall&apos;utente e associati ai
+                    cantieri/imprese di riferimento. L&apos;utente deve evitare il caricamento di
+                    dati non pertinenti, eccedenti o non necessari rispetto alle finalità di gestione
+                    documentale.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Sicurezza</h2>
+                  <p className="privacy-body">
+                    L&apos;accesso alla piattaforma avviene tramite autenticazione. I dati sono
+                    associati all&apos;account dell&apos;utente e protetti mediante le regole di
+                    accesso configurate sulla piattaforma.
+                  </p>
+                </section>
+
+                <section className="privacy-section">
+                  <h2 className="privacy-section-title">Contatti</h2>
+                  <p className="privacy-body">
+                    Per richieste relative alla privacy, alla gestione dell&apos;account o ai dati
+                    caricati, contattare il gestore della piattaforma
+                    {emailIsLink ? (
+                      <>
+                        {" "}
+                        all&apos;indirizzo{" "}
+                        <a href={`mailto:${email}`} className="privacy-link">
+                          {email}
+                        </a>
+                      </>
+                    ) : (
+                      " (email da completare nel profilo Account)"
+                    )}
+                    .
+                  </p>
+                </section>
+
+                <section className="privacy-section privacy-section-final">
+                  <p className="privacy-note">
+                    Questa pagina costituisce una base informativa operativa e dovrà essere
+                    verificata e personalizzata prima dell&apos;utilizzo commerciale o della messa
+                    a disposizione della piattaforma a soggetti terzi.
+                  </p>
+                </section>
+              </div>
+            )}
+          </article>
+
+          <div className="privacy-actions-bottom">
+            <Link href="/" className="privacy-btn privacy-btn-primary">
+              Torna alla dashboard
+            </Link>
+            {user ? (
+              <Link href="/account" className="privacy-btn privacy-btn-neutral">
+                Account
+              </Link>
+            ) : null}
+          </div>
         </div>
+      </main>
 
-        <article className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
-          <div className="mb-6 flex items-center gap-3">
-            <img src="/logo.svg" alt="Safety Trader" width={40} height={40} className="rounded-lg flex-shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-slate-800">Safety Trader</p>
-              <p className="text-xs text-slate-500">D.Lgs. 81/2008</p>
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800 mb-2">Privacy e note legali</h1>
-          <p className="text-sm text-slate-500 mb-8">
-            Safety Trader D.Lgs. 81/2008 — informativa provvisoria. Ultimo aggiornamento: maggio 2026.
-          </p>
+      <style jsx>{`
+        .privacy-page {
+          min-height: 100vh;
+          background: #f8fafc;
+          padding: 32px 20px 48px;
+          font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+          color: #0f172a;
+        }
 
-          <div className="space-y-8 text-sm text-slate-700 leading-relaxed">
-            {sections.map((s) => (
-              <section key={s.title}>
-                <h2 className="text-base font-semibold text-slate-800 mb-2">{s.title}</h2>
-                {s.body}
-              </section>
-            ))}
-          </div>
-        </article>
+        .privacy-shell {
+          max-width: 1000px;
+          margin: 0 auto;
+        }
 
-        <p className="mt-6 text-center text-xs text-slate-400">
-          <Link href="/" className="hover:text-slate-600 transition">
-            Vai alla dashboard
-          </Link>
-        </p>
-      </div>
-    </main>
+        .privacy-hero {
+          margin-bottom: 20px;
+        }
+
+        .privacy-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 12px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: #1d4ed8;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+        }
+
+        .privacy-title {
+          margin: 14px 0 0;
+          font-size: clamp(26px, 4vw, 34px);
+          font-weight: 800;
+          letter-spacing: -0.03em;
+          line-height: 1.15;
+          color: #0f172a;
+        }
+
+        .privacy-lead {
+          margin: 10px 0 0;
+          max-width: 720px;
+          font-size: 15px;
+          line-height: 1.55;
+          color: #475569;
+        }
+
+        .privacy-actions-top,
+        .privacy-actions-bottom {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+
+        .privacy-actions-bottom {
+          margin-bottom: 0;
+          margin-top: 20px;
+        }
+
+        .privacy-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          height: 44px;
+          padding: 0 18px;
+          border-radius: 14px;
+          font-size: 14px;
+          font-weight: 700;
+          text-decoration: none;
+          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .privacy-btn-primary {
+          background: #2563eb;
+          color: #ffffff;
+          border: 1px solid #2563eb;
+        }
+
+        .privacy-btn-primary:hover {
+          background: #1d4ed8;
+          border-color: #1d4ed8;
+        }
+
+        .privacy-btn-neutral {
+          background: #ffffff;
+          color: #334155;
+          border: 1px solid #cbd5e1;
+        }
+
+        .privacy-btn-neutral:hover {
+          background: #f8fafc;
+          border-color: #94a3b8;
+          color: #0f172a;
+        }
+
+        .privacy-card {
+          border: 1px solid #e2e8f0;
+          border-radius: 24px;
+          background: #ffffff;
+          padding: 28px 28px 24px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+        }
+
+        .privacy-loading {
+          margin: 0;
+          font-size: 14px;
+          color: #64748b;
+        }
+
+        .privacy-sections {
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+        }
+
+        .privacy-section {
+          padding-bottom: 22px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        .privacy-section:last-child {
+          padding-bottom: 0;
+          border-bottom: 0;
+        }
+
+        .privacy-section-title {
+          margin: 0 0 10px;
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: #0f172a;
+        }
+
+        .privacy-body {
+          margin: 0;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #334155;
+        }
+
+        .privacy-body + .privacy-body {
+          margin-top: 10px;
+        }
+
+        .privacy-body-emphasis {
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          color: #1e293b;
+        }
+
+        .privacy-list {
+          margin: 0;
+          padding-left: 20px;
+          font-size: 14px;
+          line-height: 1.65;
+          color: #334155;
+        }
+
+        .privacy-list li + li {
+          margin-top: 6px;
+        }
+
+        .privacy-link {
+          color: #2563eb;
+          font-weight: 600;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
+
+        .privacy-link:hover {
+          color: #1d4ed8;
+        }
+
+        .privacy-section-final {
+          margin-top: 4px;
+        }
+
+        .privacy-note {
+          margin: 0;
+          padding: 14px 16px;
+          border-radius: 16px;
+          border: 1px solid #fde68a;
+          background: #fffbeb;
+          font-size: 13px;
+          line-height: 1.55;
+          color: #78350f;
+        }
+
+        @media (max-width: 640px) {
+          .privacy-page {
+            padding: 24px 16px 40px;
+          }
+
+          .privacy-card {
+            padding: 22px 18px 20px;
+            border-radius: 20px;
+          }
+
+          .privacy-actions-top,
+          .privacy-actions-bottom {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .privacy-btn {
+            width: 100%;
+          }
+        }
+      `}</style>
+    </>
   );
 }
