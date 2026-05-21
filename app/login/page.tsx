@@ -10,8 +10,15 @@ type MessageType = "success" | "error" | null;
 export default function LoginPage() {
   const router = useRouter();
 
+  const [registerMode, setRegisterMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nome, setNome] = useState("");
+  const [cognome, setCognome] = useState("");
+  const [societa, setSocieta] = useState("");
+  const [sedeVia, setSedeVia] = useState("");
+  const [sedeCap, setSedeCap] = useState("");
+  const [sedeCitta, setSedeCitta] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -40,13 +47,44 @@ export default function LoginPage() {
     }
   }
 
+  function validateRegister() {
+    if (!email.trim()) return "Inserisci l'email.";
+    if (!password.trim()) return "Inserisci la password.";
+    if (!nome.trim()) return "Inserisci il nome.";
+    if (!cognome.trim()) return "Inserisci il cognome.";
+    if (!societa.trim()) return "Inserisci la società.";
+    if (!sedeVia.trim()) return "Inserisci l'indirizzo della sede (via).";
+    if (!sedeCap.trim()) return "Inserisci il CAP.";
+    if (!sedeCitta.trim()) return "Inserisci la città.";
+    return null;
+  }
+
   async function handleRegister() {
+    if (!registerMode) {
+      setRegisterMode(true);
+      showMsg("Compila i dati profilo per completare la registrazione.", "error");
+      return;
+    }
+
+    const validationError = validateRegister();
+    if (validationError) {
+      showMsg(validationError, "error");
+      return;
+    }
+
     try {
       setLoading(true);
       setMessage("");
       setMessageType(null);
 
-      await signUp(email, password);
+      await signUp(email, password, {
+        nome,
+        cognome,
+        societa,
+        sede_via: sedeVia,
+        sede_cap: sedeCap,
+        sede_citta: sedeCitta,
+      });
 
       showMsg(
         "Registrazione completata. Controlla la tua email per confermare l'account.",
@@ -127,10 +165,11 @@ export default function LoginPage() {
             <div className="auth-card">
               <div className="mobile-logo">ST</div>
 
-              <h2>Accedi al tuo account</h2>
+              <h2>{registerMode ? "Crea il tuo account" : "Accedi al tuo account"}</h2>
               <p className="auth-subtitle">
-                Inserisci le credenziali per continuare nella tua area
-                documentale.
+                {registerMode
+                  ? "Inserisci credenziali e dati profilo per registrarti su Safety Trader."
+                  : "Inserisci le credenziali per continuare nella tua area documentale."}
               </p>
 
               {message && (
@@ -165,14 +204,123 @@ export default function LoginPage() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete={registerMode ? "new-password" : "current-password"}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !loading) {
-                      handleLogin();
+                      if (registerMode) handleRegister();
+                      else handleLogin();
                     }
                   }}
                 />
               </div>
+
+              {registerMode ? (
+                <div className="profile-section">
+                  <div className="profile-section-head">Dati profilo</div>
+
+                  <div className="profile-grid profile-grid-2">
+                    <div className="form-group">
+                      <label htmlFor="nome">Nome</label>
+                      <input
+                        id="nome"
+                        type="text"
+                        value={nome}
+                        onChange={e => setNome(e.target.value)}
+                        placeholder="Mario"
+                        autoComplete="given-name"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="cognome">Cognome</label>
+                      <input
+                        id="cognome"
+                        type="text"
+                        value={cognome}
+                        onChange={e => setCognome(e.target.value)}
+                        placeholder="Rossi"
+                        autoComplete="family-name"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="societa">Società</label>
+                    <input
+                      id="societa"
+                      type="text"
+                      value={societa}
+                      onChange={e => setSocieta(e.target.value)}
+                      placeholder="Ragione sociale"
+                      autoComplete="organization"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="sede_via">Indirizzo sede — Via</label>
+                    <input
+                      id="sede_via"
+                      type="text"
+                      value={sedeVia}
+                      onChange={e => setSedeVia(e.target.value)}
+                      placeholder="Via Esempio 12"
+                      autoComplete="street-address"
+                    />
+                  </div>
+
+                  <div className="profile-grid profile-grid-2">
+                    <div className="form-group">
+                      <label htmlFor="sede_cap">CAP</label>
+                      <input
+                        id="sede_cap"
+                        type="text"
+                        value={sedeCap}
+                        onChange={e => setSedeCap(e.target.value)}
+                        placeholder="00100"
+                        autoComplete="postal-code"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="sede_citta">Città</label>
+                      <input
+                        id="sede_citta"
+                        type="text"
+                        value={sedeCitta}
+                        onChange={e => setSedeCitta(e.target.value)}
+                        placeholder="Roma"
+                        autoComplete="address-level2"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="mode-toggle">
+                {registerMode ? (
+                  <button
+                    type="button"
+                    className="mode-toggle-btn"
+                    onClick={() => {
+                      setRegisterMode(false);
+                      setMessage("");
+                      setMessageType(null);
+                    }}
+                  >
+                    Hai già un account? Accedi
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="mode-toggle-btn"
+                    onClick={() => {
+                      setRegisterMode(true);
+                      setMessage("");
+                      setMessageType(null);
+                    }}
+                  >
+                    Crea un nuovo account
+                  </button>
+                )}
+              </p>
 
               <div className="actions">
                 <button
@@ -426,6 +574,54 @@ export default function LoginPage() {
           border-radius: 28px;
           background: #ffffff;
           box-shadow: 0 24px 60px rgba(15, 23, 42, 0.13);
+          max-height: calc(100svh - 80px);
+          overflow-y: auto;
+        }
+
+        .profile-section {
+          margin-top: 4px;
+          padding-top: 14px;
+          border-top: 1px solid #eef2f7;
+        }
+
+        .profile-section-head {
+          margin-bottom: 4px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #64748b;
+        }
+
+        .profile-grid {
+          display: grid;
+          gap: 0;
+        }
+
+        .profile-grid-2 {
+          grid-template-columns: 1fr 1fr;
+          gap: 0 10px;
+        }
+
+        .mode-toggle {
+          margin: 14px 0 0;
+          text-align: center;
+        }
+
+        .mode-toggle-btn {
+          border: 0;
+          background: none;
+          padding: 0;
+          color: #2563eb;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
+
+        .mode-toggle-btn:hover {
+          color: #1d4ed8;
         }
 
         .mobile-logo {
@@ -733,6 +929,11 @@ export default function LoginPage() {
           .auth-links {
             flex-direction: column;
             align-items: center;
+          }
+
+          .profile-grid-2 {
+            grid-template-columns: 1fr;
+            gap: 0;
           }
         }
       `}</style>

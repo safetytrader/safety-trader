@@ -4,8 +4,29 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { signOut } from "@/lib/auth";
+import { signOut, updateUserProfile } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+
+const emptyProfile = () => ({
+  nome: "",
+  cognome: "",
+  societa: "",
+  sede_via: "",
+  sede_cap: "",
+  sede_citta: "",
+});
+
+function profileFromMetadata(meta) {
+  const m = meta || {};
+  return {
+    nome: m.nome ?? "",
+    cognome: m.cognome ?? "",
+    societa: m.societa ?? "",
+    sede_via: m.sede_via ?? "",
+    sede_cap: m.sede_cap ?? "",
+    sede_citta: m.sede_citta ?? "",
+  };
+}
 
 function formatProvider(user) {
   const identity = user?.identities?.[0];
@@ -29,11 +50,25 @@ function formatCreatedAt(user) {
   }
 }
 
+function validateProfile(profile) {
+  if (!profile.nome.trim()) return "Inserisci il nome.";
+  if (!profile.cognome.trim()) return "Inserisci il cognome.";
+  if (!profile.societa.trim()) return "Inserisci la società.";
+  if (!profile.sede_via.trim()) return "Inserisci l'indirizzo della sede (via).";
+  if (!profile.sede_cap.trim()) return "Inserisci il CAP.";
+  if (!profile.sede_citta.trim()) return "Inserisci la città.";
+  return null;
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(emptyProfile());
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,9 +77,16 @@ export default function AccountPage() {
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
-        if (!cancelled) setUser(data.session?.user ?? null);
+        const u = data.session?.user ?? null;
+        if (!cancelled) {
+          setUser(u);
+          setProfile(profileFromMetadata(u?.user_metadata));
+        }
       } catch {
-        if (!cancelled) setUser(null);
+        if (!cancelled) {
+          setUser(null);
+          setProfile(emptyProfile());
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -53,7 +95,11 @@ export default function AccountPage() {
     loadUser();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!cancelled) setUser(session?.user ?? null);
+      if (!cancelled) {
+        const u = session?.user ?? null;
+        setUser(u);
+        setProfile(profileFromMetadata(u?.user_metadata));
+      }
     });
 
     return () => {
@@ -61,6 +107,38 @@ export default function AccountPage() {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  function showMsg(text, type) {
+    setMessage(text);
+    setMessageType(type);
+  }
+
+  async function handleSave() {
+    const validationError = validateProfile(profile);
+    if (validationError) {
+      showMsg(validationError, "error");
+      return;
+    }
+
+    try {
+      setSaveLoading(true);
+      setMessage("");
+      setMessageType(null);
+      await updateUserProfile(profile);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUser(data.user);
+        setProfile(profileFromMetadata(data.user.user_metadata));
+      }
+      showMsg("Profilo aggiornato correttamente.", "success");
+    } catch (err) {
+      const text =
+        err instanceof Error ? err.message : "Salvataggio profilo non riuscito.";
+      showMsg(text, "error");
+    } finally {
+      setSaveLoading(false);
+    }
+  }
 
   async function handleLogout() {
     try {
@@ -77,6 +155,10 @@ export default function AccountPage() {
 
   const provider = user ? formatProvider(user) : null;
   const createdAt = user ? formatCreatedAt(user) : null;
+
+  const setField = (key, value) => {
+    setProfile(p => ({ ...p, [key]: value }));
+  };
 
   return (
     <>
@@ -97,41 +179,142 @@ export default function AccountPage() {
               <>
                 <h1 className="account-title">Impostazioni account</h1>
                 <p className="account-lead">
-                  Gestisci le informazioni di accesso e la sessione corrente.
+                  Gestisci profilo, dati società e sessione di accesso.
                 </p>
 
-                <div className="account-fields">
-                  <div className="account-field">
-                    <span className="account-field-label">Email</span>
-                    <span className="account-field-value">{user.email || "—"}</span>
+                {message ? (
+                  <div
+                    className={
+                      messageType === "error"
+                        ? "account-message account-message-error"
+                        : "account-message account-message-success"
+                    }
+                    role="status"
+                  >
+                    {message}
                   </div>
-                  <div className="account-field">
-                    <span className="account-field-label">Stato</span>
-                    <span className="account-status">Account attivo</span>
+                ) : null}
+
+                <div className="account-section">
+                  <h2 className="account-section-title">Accesso</h2>
+                  <div className="account-fields">
+                    <div className="account-field account-field-readonly">
+                      <span className="account-field-label">Email</span>
+                      <span className="account-field-value">{user.email || "—"}</span>
+                    </div>
+                    <div className="account-field account-field-readonly">
+                      <span className="account-field-label">Stato</span>
+                      <span className="account-status">Account attivo</span>
+                    </div>
+                    {provider ? (
+                      <div className="account-field account-field-readonly">
+                        <span className="account-field-label">Metodo di accesso</span>
+                        <span className="account-field-value">{provider}</span>
+                      </div>
+                    ) : null}
+                    {createdAt ? (
+                      <div className="account-field account-field-readonly">
+                        <span className="account-field-label">Account creato il</span>
+                        <span className="account-field-value">{createdAt}</span>
+                      </div>
+                    ) : null}
                   </div>
-                  {provider ? (
-                    <div className="account-field">
-                      <span className="account-field-label">Metodo di accesso</span>
-                      <span className="account-field-value">{provider}</span>
-                    </div>
-                  ) : null}
-                  {createdAt ? (
-                    <div className="account-field">
-                      <span className="account-field-label">Account creato il</span>
-                      <span className="account-field-value">{createdAt}</span>
-                    </div>
-                  ) : null}
                 </div>
 
-                <div className="account-actions">
-                  <Link href="/" className="account-btn account-btn-primary">
+                <div className="account-section">
+                  <h2 className="account-section-title">Dati personali</h2>
+                  <div className="account-form-grid account-form-grid-2">
+                    <div className="account-form-group">
+                      <label htmlFor="account-nome">Nome</label>
+                      <input
+                        id="account-nome"
+                        type="text"
+                        value={profile.nome}
+                        onChange={e => setField("nome", e.target.value)}
+                        autoComplete="given-name"
+                      />
+                    </div>
+                    <div className="account-form-group">
+                      <label htmlFor="account-cognome">Cognome</label>
+                      <input
+                        id="account-cognome"
+                        type="text"
+                        value={profile.cognome}
+                        onChange={e => setField("cognome", e.target.value)}
+                        autoComplete="family-name"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="account-section">
+                  <h2 className="account-section-title">Società e sede</h2>
+                  <div className="account-form-grid">
+                    <div className="account-form-group">
+                      <label htmlFor="account-societa">Società</label>
+                      <input
+                        id="account-societa"
+                        type="text"
+                        value={profile.societa}
+                        onChange={e => setField("societa", e.target.value)}
+                        autoComplete="organization"
+                      />
+                    </div>
+                    <div className="account-form-group">
+                      <label htmlFor="account-sede-via">Indirizzo sede — Via</label>
+                      <input
+                        id="account-sede-via"
+                        type="text"
+                        value={profile.sede_via}
+                        onChange={e => setField("sede_via", e.target.value)}
+                        autoComplete="street-address"
+                      />
+                    </div>
+                    <div className="account-form-grid account-form-grid-2">
+                      <div className="account-form-group">
+                        <label htmlFor="account-sede-cap">CAP</label>
+                        <input
+                          id="account-sede-cap"
+                          type="text"
+                          value={profile.sede_cap}
+                          onChange={e => setField("sede_cap", e.target.value)}
+                          autoComplete="postal-code"
+                        />
+                      </div>
+                      <div className="account-form-group">
+                        <label htmlFor="account-sede-citta">Città</label>
+                        <input
+                          id="account-sede-citta"
+                          type="text"
+                          value={profile.sede_citta}
+                          onChange={e => setField("sede_citta", e.target.value)}
+                          autoComplete="address-level2"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="account-actions account-actions-primary">
+                  <button
+                    type="button"
+                    className="account-btn account-btn-primary"
+                    onClick={handleSave}
+                    disabled={saveLoading || logoutLoading}
+                  >
+                    {saveLoading ? "Salvataggio…" : "Salva modifiche"}
+                  </button>
+                </div>
+
+                <div className="account-actions account-actions-secondary">
+                  <Link href="/" className="account-btn account-btn-neutral">
                     Torna alla dashboard
                   </Link>
                   <button
                     type="button"
                     className="account-btn account-btn-danger"
                     onClick={handleLogout}
-                    disabled={logoutLoading}
+                    disabled={logoutLoading || saveLoading}
                   >
                     {logoutLoading ? "Uscita in corso…" : "Logout"}
                   </button>
@@ -147,8 +330,8 @@ export default function AccountPage() {
               <>
                 <h1 className="account-title">Non hai effettuato l&apos;accesso</h1>
                 <p className="account-lead">
-                  Accedi con le tue credenziali per visualizzare le impostazioni
-                  dell&apos;account.
+                  Accedi con le tue credenziali per visualizzare e modificare il
+                  profilo.
                 </p>
                 <div className="account-actions account-actions-single">
                   <Link href="/login" className="account-btn account-btn-primary">
@@ -238,18 +421,51 @@ export default function AccountPage() {
         }
 
         .account-lead {
-          margin: 0 0 24px;
+          margin: 0 0 20px;
           font-size: 14px;
           line-height: 1.6;
           color: #64748b;
           max-width: 52ch;
         }
 
+        .account-message {
+          margin-bottom: 20px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1.5;
+        }
+
+        .account-message-error {
+          border: 1px solid #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .account-message-success {
+          border: 1px solid #bbf7d0;
+          background: #f0fdf4;
+          color: #15803d;
+        }
+
+        .account-section {
+          margin-bottom: 24px;
+        }
+
+        .account-section-title {
+          margin: 0 0 12px;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #475569;
+        }
+
         .account-fields {
           display: flex;
           flex-direction: column;
-          gap: 12px;
-          margin-bottom: 28px;
+          gap: 10px;
         }
 
         .account-field {
@@ -259,6 +475,10 @@ export default function AccountPage() {
           padding: 14px 16px;
           border-radius: 16px;
           border: 1px solid #e2e8f0;
+          background: #f8fafc;
+        }
+
+        .account-field-readonly {
           background: #f8fafc;
         }
 
@@ -290,11 +510,64 @@ export default function AccountPage() {
           border: 1px solid #a7f3d0;
         }
 
+        .account-form-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+        }
+
+        .account-form-grid-2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 0 12px;
+        }
+
+        .account-form-group {
+          margin-bottom: 12px;
+        }
+
+        .account-form-group label {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 13px;
+          font-weight: 800;
+          color: #334155;
+        }
+
+        .account-form-group input {
+          width: 100%;
+          height: 46px;
+          box-sizing: border-box;
+          border: 1px solid #dbe3ef;
+          border-radius: 14px;
+          background: #ffffff;
+          padding: 0 14px;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .account-form-group input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
         .account-actions {
           display: flex;
           flex-wrap: wrap;
           gap: 10px;
-          margin-bottom: 20px;
+          margin-bottom: 16px;
+        }
+
+        .account-actions-primary {
+          margin-top: 4px;
+          margin-bottom: 12px;
+        }
+
+        .account-actions-secondary {
+          padding-top: 16px;
+          border-top: 1px solid #f1f5f9;
         }
 
         .account-actions-single {
@@ -327,8 +600,19 @@ export default function AccountPage() {
           box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
         }
 
-        .account-btn-primary:hover {
+        .account-btn-primary:hover:not(:disabled) {
           background: #1d4ed8;
+        }
+
+        .account-btn-neutral {
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #334155;
+        }
+
+        .account-btn-neutral:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
         }
 
         .account-btn-danger {
@@ -366,6 +650,11 @@ export default function AccountPage() {
 
           .account-title {
             font-size: 24px;
+          }
+
+          .account-form-grid-2 {
+            grid-template-columns: 1fr;
+            gap: 0;
           }
 
           .account-actions {
