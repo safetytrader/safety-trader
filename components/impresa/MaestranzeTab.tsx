@@ -85,8 +85,12 @@ function renderUnilavCell(val) {
 function MaestranzeFormField({ label, value, onChange, hint }) {
   return (
     <div className="maestranze-field">
-      <label>{label}</label>
-      <input value={value} onChange={e => onChange(e.target.value)} />
+      <label className="maestranze-label">{label}</label>
+      <input
+        className="maestranze-input"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
       {hint ? <p className="maestranze-field-hint">{hint}</p> : null}
     </div>
   );
@@ -94,10 +98,64 @@ function MaestranzeFormField({ label, value, onChange, hint }) {
 
 function MaestranzeCheckField({ label, checked, onChange }) {
   return (
-    <label className="maestranze-check-field">
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
-      <span>{label}</span>
+    <label className={`maestranze-check-field${checked ? " maestranze-check-field-on" : ""}`}>
+      <input
+        type="checkbox"
+        className="maestranze-check-input"
+        checked={checked}
+        onChange={e => onChange(e.target.checked)}
+      />
+      <span className="maestranze-check-label">{label}</span>
     </label>
+  );
+}
+
+function MaestranzaFormModal({ mode, form, setForm, onClose, onSubmit }) {
+  const title = mode === "create" ? "Aggiungi maestranza" : "Modifica maestranza";
+  const primaryLabel = mode === "create" ? "Aggiungi maestranza" : "Salva modifiche";
+
+  return (
+    <div className="maestranze-modal-overlay" onClick={onClose}>
+      <div
+        className="maestranze-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="maestranze-modal-title"
+        aria-modal="true"
+      >
+        <div className="maestranze-modal-head">
+          <div className="maestranze-modal-head-text">
+            <h2 id="maestranze-modal-title" className="maestranze-modal-title">
+              {title}
+            </h2>
+            <p className="maestranze-modal-sub">
+              Inserisci dati anagrafici, formazione, idoneità e abilitazioni operative.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="maestranze-modal-close"
+            onClick={onClose}
+            aria-label="Chiudi"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="maestranze-modal-body">
+          <MaestranzaFormFields form={form} setForm={setForm} />
+        </div>
+
+        <div className="maestranze-modal-foot">
+          <button type="button" className="maestranze-modal-btn-secondary" onClick={onClose}>
+            Annulla
+          </button>
+          <button type="button" className="maestranze-modal-btn-primary" onClick={onSubmit}>
+            {primaryLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -117,11 +175,17 @@ export function MaestranzaFormFields({ form, setForm }) {
             value={form.qualifica}
             onChange={v => setForm(p => ({ ...p, qualifica: v }))}
           />
+          <MaestranzeFormField
+            label="UNILAV"
+            value={form.unilav}
+            onChange={v => setForm(p => ({ ...p, unilav: v }))}
+            hint="IND oppure data"
+          />
         </div>
       </div>
 
       <div className="maestranze-form-section">
-        <h3 className="maestranze-form-section-title">Formazione e idoneità</h3>
+        <h3 className="maestranze-form-section-title">Idoneità e formazione</h3>
         <div className="maestranze-form-grid">
           <MaestranzeCheckField
             label="DPI"
@@ -143,16 +207,10 @@ export function MaestranzaFormFields({ form, setForm }) {
             value={form.formazioneSpec}
             onChange={v => setForm(p => ({ ...p, formazioneSpec: v }))}
           />
-          <MaestranzeFormField
-            label="UNILAV"
-            value={form.unilav}
-            onChange={v => setForm(p => ({ ...p, unilav: v }))}
-            hint="IND oppure data"
-          />
         </div>
       </div>
 
-      <div className="maestranze-form-section">
+      <div className="maestranze-form-section maestranze-form-section-last">
         <h3 className="maestranze-form-section-title">Abilitazioni opzionali</h3>
         <div className="maestranze-form-grid">
           <MaestranzeFormField
@@ -211,6 +269,8 @@ export function MaestranzeTab({
   dc,
 }) {
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState(emptyMaestranza());
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState(emptyMaestranza());
 
@@ -233,8 +293,26 @@ export function MaestranzeTab({
       setSelectedIndex(selectedIndex - 1);
   };
 
+  const handleOpenAdd = () => {
+    setShowEditModal(false);
+    setAddForm(emptyMaestranza());
+    setShowAddModal(true);
+  };
+
+  const handleCloseAdd = () => {
+    setShowAddModal(false);
+  };
+
+  const handleAdd = () => {
+    const nuovaLista = [...imp.maestranze, addForm];
+    persistMaestranze(nuovaLista);
+    setAddForm(emptyMaestranza());
+    setShowAddModal(false);
+  };
+
   const openEdit = () => {
     if (selectedIndex === null) return;
+    setShowAddModal(false);
     setEditForm({ ...emptyMaestranza(), ...imp.maestranze[selectedIndex] });
     setShowEditModal(true);
   };
@@ -296,7 +374,7 @@ export function MaestranzeTab({
               <button
                 type="button"
                 className="maestranze-btn maestranze-btn-primary"
-                onClick={() => setShowAddMaestra(true)}
+                onClick={handleOpenAdd}
               >
                 + Aggiungi maestranza
               </button>
@@ -331,7 +409,7 @@ export function MaestranzeTab({
             <button
               type="button"
               className="maestranze-btn maestranze-btn-primary"
-              onClick={() => setShowAddMaestra(true)}
+              onClick={handleOpenAdd}
             >
               + Aggiungi maestranza
             </button>
@@ -469,43 +547,25 @@ export function MaestranzeTab({
         </div>
       </div>
 
-      {showEditModal && (
-        <div
-          className="maestranze-modal-overlay"
-          onClick={() => setShowEditModal(false)}
-        >
-          <div
-            className="maestranze-modal"
-            onClick={e => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="maestranze-modal-title"
-          >
-            <div className="maestranze-modal-head">
-              <h2 id="maestranze-modal-title" className="maestranze-modal-title">
-                Modifica maestranza
-              </h2>
-              <button
-                type="button"
-                className="maestranze-modal-close"
-                onClick={() => setShowEditModal(false)}
-                aria-label="Chiudi"
-              >
-                ×
-              </button>
-            </div>
-            <div className="maestranze-modal-body">
-              <MaestranzaFormFields form={editForm} setForm={setEditForm} />
-              <button
-                type="button"
-                className="maestranze-btn maestranze-btn-primary maestranze-btn-full"
-                onClick={handleSaveEdit}
-              >
-                Salva modifiche
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showAddModal ? (
+        <MaestranzaFormModal
+          mode="create"
+          form={addForm}
+          setForm={setAddForm}
+          onClose={handleCloseAdd}
+          onSubmit={handleAdd}
+        />
+      ) : null}
+
+      {showEditModal ? (
+        <MaestranzaFormModal
+          mode="edit"
+          form={editForm}
+          setForm={setEditForm}
+          onClose={() => setShowEditModal(false)}
+          onSubmit={handleSaveEdit}
+        />
+      ) : null}
 
       <style jsx>{`
         .maestranze-root {
@@ -954,7 +1014,7 @@ export function MaestranzeTab({
           color: #2563eb;
         }
 
-        .maestranze-modal-overlay {
+        :global(.maestranze-modal-overlay) {
           position: fixed;
           inset: 0;
           z-index: 60;
@@ -962,136 +1022,231 @@ export function MaestranzeTab({
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: rgba(15, 23, 42, 0.52);
-          backdrop-filter: blur(4px);
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(6px);
         }
 
-        .maestranze-modal {
+        :global(.maestranze-modal) {
           width: 100%;
-          max-width: 760px;
-          max-height: 90vh;
+          max-width: 780px;
+          max-height: calc(100vh - 64px);
           overflow: hidden;
           display: flex;
           flex-direction: column;
           border-radius: 24px;
           border: 1px solid #e2e8f0;
           background: #ffffff;
-          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+          box-shadow:
+            0 25px 50px -12px rgba(15, 23, 42, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.08);
         }
 
-        .maestranze-modal-head {
+        :global(.maestranze-modal-head) {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
-          gap: 12px;
-          padding: 22px 26px;
+          gap: 16px;
+          padding: 24px 24px 20px;
           border-bottom: 1px solid #f1f5f9;
           flex-shrink: 0;
         }
 
-        .maestranze-modal-title {
+        :global(.maestranze-modal-head-text) {
+          min-width: 0;
+        }
+
+        :global(.maestranze-modal-title) {
           margin: 0;
-          font-size: 18px;
-          font-weight: 900;
-          color: #020617;
-        }
-
-        .maestranze-modal-close {
-          width: 36px;
-          height: 36px;
-          border: 0;
-          border-radius: 10px;
-          background: #f8fafc;
-          color: #64748b;
-          font-size: 22px;
-          line-height: 1;
-          cursor: pointer;
-        }
-
-        .maestranze-modal-close:hover {
-          background: #f1f5f9;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
           color: #0f172a;
         }
 
-        .maestranze-modal-body {
-          padding: 22px 26px 26px;
-          overflow-y: auto;
-        }
-
-        .maestranze-form-section {
-          margin-bottom: 20px;
-        }
-
-        .maestranze-form-section-title {
-          margin: 0 0 12px;
-          padding-bottom: 8px;
-          border-bottom: 1px solid #f1f5f9;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
+        :global(.maestranze-modal-sub) {
+          margin: 6px 0 0;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.45;
           color: #64748b;
         }
 
-        .maestranze-form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 12px;
+        :global(.maestranze-modal-close) {
+          width: 32px;
+          height: 32px;
+          flex-shrink: 0;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #ffffff;
+          color: #64748b;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
         }
 
-        .maestranze-field label {
-          display: block;
-          margin-bottom: 6px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
+        :global(.maestranze-modal-close:hover) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+          color: #0f172a;
+        }
+
+        :global(.maestranze-modal-body) {
+          padding: 20px 24px 24px;
+          overflow-y: auto;
+          flex: 1;
+          min-height: 0;
+        }
+
+        :global(.maestranze-modal-foot) {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 16px 24px 20px;
+          border-top: 1px solid #e2e8f0;
+          background: #fafbfc;
+          flex-shrink: 0;
+        }
+
+        :global(.maestranze-modal-btn-primary),
+        :global(.maestranze-modal-btn-secondary) {
+          height: 46px;
+          padding: 0 18px;
+          border-radius: 14px;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            box-shadow 0.15s ease;
+        }
+
+        :global(.maestranze-modal-btn-primary) {
+          border: 1px solid #1d4ed8;
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+        }
+
+        :global(.maestranze-modal-btn-primary:hover) {
+          background: #1d4ed8;
+          border-color: #1e40af;
+        }
+
+        :global(.maestranze-modal-btn-secondary) {
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
           color: #475569;
         }
 
-        .maestranze-field input {
+        :global(.maestranze-modal-btn-secondary:hover) {
+          background: #f8fafc;
+          border-color: #94a3b8;
+          color: #0f172a;
+        }
+
+        :global(.maestranze-form-section) {
+          margin-bottom: 22px;
+        }
+
+        :global(.maestranze-form-section-last) {
+          margin-bottom: 0;
+        }
+
+        :global(.maestranze-form-section-title) {
+          margin: 0 0 14px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.02em;
+        }
+
+        :global(.maestranze-form-grid) {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 16px;
+        }
+
+        :global(.maestranze-field) {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+        }
+
+        :global(.maestranze-label) {
+          display: block;
+          margin-bottom: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #334155;
+        }
+
+        :global(.maestranze-input) {
           width: 100%;
           height: 48px;
           box-sizing: border-box;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #cbd5e1;
           border-radius: 14px;
           background: #ffffff;
           padding: 0 14px;
           font-size: 14px;
           color: #0f172a;
           outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .maestranze-field input:focus {
+        :global(.maestranze-input:focus) {
           border-color: #2563eb;
-          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
         }
 
-        .maestranze-field-hint {
-          margin: 4px 0 0;
-          font-size: 11px;
+        :global(.maestranze-field-hint) {
+          margin: 6px 0 0;
+          font-size: 12px;
           color: #94a3b8;
         }
 
-        .maestranze-check-field {
+        :global(.maestranze-check-field) {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 12px;
           min-height: 48px;
-          padding: 10px 14px;
+          padding: 0 14px;
           border-radius: 14px;
-          border: 1px solid #e2e8f0;
-          background: #fafbfc;
-          font-size: 13px;
-          font-weight: 700;
-          color: #334155;
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
+          cursor: pointer;
+          transition:
+            border-color 0.15s ease,
+            background 0.15s ease,
+            box-shadow 0.15s ease;
+        }
+
+        :global(.maestranze-check-field-on) {
+          border-color: #93c5fd;
+          background: #eff6ff;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+        }
+
+        :global(.maestranze-check-input) {
+          width: 18px;
+          height: 18px;
+          flex-shrink: 0;
+          accent-color: #2563eb;
           cursor: pointer;
         }
 
-        .maestranze-check-field input {
-          width: 18px;
-          height: 18px;
-          accent-color: #2563eb;
+        :global(.maestranze-check-label) {
+          font-size: 14px;
+          font-weight: 600;
+          color: #334155;
         }
 
         @media (max-width: 720px) {
@@ -1123,8 +1278,18 @@ export function MaestranzeTab({
             width: 100%;
           }
 
-          .maestranze-form-grid {
+          :global(.maestranze-form-grid) {
             grid-template-columns: 1fr;
+          }
+
+          :global(.maestranze-modal-foot) {
+            flex-direction: column-reverse;
+            align-items: stretch;
+          }
+
+          :global(.maestranze-modal-btn-primary),
+          :global(.maestranze-modal-btn-secondary) {
+            width: 100%;
           }
         }
       `}</style>
