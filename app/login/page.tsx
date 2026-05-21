@@ -318,22 +318,24 @@ export default function LoginPage() {
               ) : null}
 
               <div className="actions">
-                <button
-                  type="button"
-                  className="primary-btn"
-                  onClick={handleLogin}
-                  disabled={loading}
-                >
-                  {loading ? "Operazione in corso..." : "Accedi"}
-                </button>
+                {!registerMode ? (
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={handleLogin}
+                    disabled={loading}
+                  >
+                    {loading ? "Operazione in corso..." : "Accedi"}
+                  </button>
+                ) : null}
 
                 <button
                   type="button"
-                  className="secondary-btn"
+                  className={registerMode ? "primary-btn" : "secondary-btn"}
                   onClick={handleRegister}
                   disabled={loading}
                 >
-                  Registrati
+                  {loading ? "Operazione in corso..." : "Registrati"}
                 </button>
               </div>
 
