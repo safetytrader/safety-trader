@@ -66,7 +66,17 @@ export function mapOpenAiError(error: unknown, hasApiKey: boolean): string {
     return "Documento non leggibile dall'AI.";
   }
 
-  return raw || "Errore analisi documento";
+  if (
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("econnreset") ||
+    msg.includes("timeout") ||
+    msg.includes("failed to fetch")
+  ) {
+    return "Analisi AI non disponibile. Riprova tra poco.";
+  }
+
+  return raw || "Analisi AI non disponibile. Riprova tra poco.";
 }
 
 function extractOutputText(data: Record<string, unknown>): string {

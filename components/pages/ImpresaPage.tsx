@@ -39,13 +39,6 @@ export function ImpresaPage({
   showExport,
   setShowAddMaestra,
   updateImpresa,
-  handleFiles,
-  handleAnalyzeDocument,
-  aiAnalysisModal,
-  setAiAnalysisModal,
-  dragOver,
-  setDragOver,
-  fileRef,
   dc,
 }) {
   const st = calcStatus(imp.checks);
@@ -169,13 +162,6 @@ export function ImpresaPage({
                   imp={imp}
                   activeCantiere={activeCantiere}
                   activeImpresa={activeImpresa}
-                  dragOver={dragOver}
-                  setDragOver={setDragOver}
-                  handleFiles={handleFiles}
-                  handleAnalyzeDocument={handleAnalyzeDocument}
-                  aiAnalysisModal={aiAnalysisModal}
-                  setAiAnalysisModal={setAiAnalysisModal}
-                  fileRef={fileRef}
                   updateImpresa={updateImpresa}
                 />
               )}

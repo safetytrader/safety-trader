@@ -415,6 +415,192 @@ export async function insertDocumentAnalysis(row) {
   return data;
 }
 
+export async function loadImpresaStateForAi(supabaseClient, impresaId) {
+  let checks = {};
+  let note = "";
+  let allegati = {};
+  let allegatiScadenze = {};
+  let maestranze = [];
+
+  const { data: checklistRows, error: checklistError } = await supabaseClient
+    .from("checklist_impresa")
+    .select("checks, note")
+    .eq("impresa_id", impresaId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (checklistError) throw new Error(checklistError.message);
+  if (checklistRows?.[0]) {
+    checks = normalizeChecks(checklistRows[0].checks);
+    note = checklistRows[0].note ?? "";
+  }
+
+  const { data: allegatiRows, error: allegatiError } = await supabaseClient
+    .from("allegati_impresa")
+    .select("allegati, allegati_scadenze")
+    .eq("impresa_id", impresaId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (allegatiError) throw new Error(allegatiError.message);
+  if (allegatiRows?.[0]) {
+    allegati = normalizeJsonMap(allegatiRows[0].allegati);
+    allegatiScadenze = normalizeJsonMap(allegatiRows[0].allegati_scadenze);
+  }
+
+  const { data: maestranzeRows, error: maestranzeError } = await supabaseClient
+    .from("maestranze")
+    .select(
+      "nome, qualifica, dpi, idoneita, formazione_base, formazione_spec, preposto, ponteggiatori, antincendio, ps, confinati, mdt, ple, gruista, unilav"
+    )
+    .eq("impresa_id", impresaId)
+    .order("created_at", { ascending: true });
+
+  if (maestranzeError) throw new Error(maestranzeError.message);
+  maestranze = (maestranzeRows ?? []).map(rowToMaestranzaApp);
+
+  return { checks, note, allegati, allegatiScadenze, maestranze };
+}
+
+async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note) {
+  const normalizedChecks = normalizeChecks(checks);
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabaseClient.from("checklist_impresa").upsert(
+    {
+      impresa_id: impresaId,
+      checks: normalizedChecks,
+      note: note ?? "",
+      updated_at: updatedAt,
+    },
+    { onConflict: "impresa_id" }
+  );
+
+  if (!error) return;
+
+  const { data: existingRows, error: selectError } = await supabaseClient
+    .from("checklist_impresa")
+    .select("impresa_id")
+    .eq("impresa_id", impresaId)
+    .limit(1);
+
+  if (selectError) throw new Error(selectError.message || error.message);
+
+  if (existingRows?.length) {
+    const { error: updateError } = await supabaseClient
+      .from("checklist_impresa")
+      .update({
+        checks: normalizedChecks,
+        note: note ?? "",
+        updated_at: updatedAt,
+      })
+      .eq("impresa_id", impresaId);
+    if (updateError) throw new Error(updateError.message);
+    return;
+  }
+
+  const { error: insertError } = await supabaseClient.from("checklist_impresa").insert({
+    impresa_id: impresaId,
+    checks: normalizedChecks,
+    note: note ?? "",
+    updated_at: updatedAt,
+  });
+  if (insertError) throw new Error(insertError.message);
+}
+
+async function upsertAllegatiWithClient(supabaseClient, impresaId, allegati, allegatiScadenze) {
+  const normalizedAllegati = normalizeJsonMap(allegati);
+  const normalizedScadenze = normalizeJsonMap(allegatiScadenze);
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabaseClient.from("allegati_impresa").upsert(
+    {
+      impresa_id: impresaId,
+      allegati: normalizedAllegati,
+      allegati_scadenze: normalizedScadenze,
+      updated_at: updatedAt,
+    },
+    { onConflict: "impresa_id" }
+  );
+
+  if (!error) return;
+
+  const { data: existingRows, error: selectError } = await supabaseClient
+    .from("allegati_impresa")
+    .select("impresa_id")
+    .eq("impresa_id", impresaId)
+    .limit(1);
+
+  if (selectError) throw new Error(selectError.message || error.message);
+
+  if (existingRows?.length) {
+    const { error: updateError } = await supabaseClient
+      .from("allegati_impresa")
+      .update({
+        allegati: normalizedAllegati,
+        allegati_scadenze: normalizedScadenze,
+        updated_at: updatedAt,
+      })
+      .eq("impresa_id", impresaId);
+    if (updateError) throw new Error(updateError.message);
+    return;
+  }
+
+  const { error: insertError } = await supabaseClient.from("allegati_impresa").insert({
+    impresa_id: impresaId,
+    allegati: normalizedAllegati,
+    allegati_scadenze: normalizedScadenze,
+    updated_at: updatedAt,
+  });
+  if (insertError) throw new Error(insertError.message);
+}
+
+async function replaceMaestranzeWithClient(supabaseClient, impresaId, maestranze) {
+  const { error: deleteError } = await supabaseClient
+    .from("maestranze")
+    .delete()
+    .eq("impresa_id", impresaId);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  const list = maestranze ?? [];
+  if (!list.length) return;
+
+  const rows = list.map(m => maestranzaToDb(m, impresaId));
+  const { error: insertError } = await supabaseClient.from("maestranze").insert(rows);
+  if (insertError) throw new Error(insertError.message);
+}
+
+export async function persistImpresaStateAfterAi(
+  supabaseClient,
+  impresaId,
+  { checks, note, allegati, allegatiScadenze, maestranze }
+) {
+  await upsertChecklistWithClient(supabaseClient, impresaId, checks, note);
+  await upsertAllegatiWithClient(supabaseClient, impresaId, allegati, allegatiScadenze);
+  await replaceMaestranzeWithClient(supabaseClient, impresaId, maestranze);
+}
+
+export async function insertDocumentAnalysisServer(supabaseClient, userId, row) {
+  const payload = {
+    document_id: null,
+    impresa_id: row.impresa_id ?? null,
+    cantiere_id: row.cantiere_id ?? null,
+    user_id: userId,
+    status: row.status ?? "completed",
+    document_type: row.document_type ?? null,
+    confidence: row.confidence ?? null,
+    summary: row.summary ?? null,
+    extracted_data: row.extracted_data ?? {},
+    applied_changes: row.applied_changes ?? {},
+    skipped_changes: row.skipped_changes ?? {},
+    warnings: row.warnings ?? [],
+    error_message: row.error_message ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabaseClient.from("document_analysis").insert(payload);
+  if (error) throw new Error(error.message);
+}
+
 async function impresaWithChecklist(row) {
   const imp = rowToImpresaApp(row);
   try {

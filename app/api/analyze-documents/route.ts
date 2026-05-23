@@ -1,81 +1,27 @@
 import {
   appendImpresaMismatchWarning,
+  applyAiUpdates,
   buildFinalUpdates,
   parseAiJsonResponse,
 } from "@/lib/documentAnalysis";
+import {
+  insertDocumentAnalysisServer,
+  loadImpresaStateForAi,
+  persistImpresaStateAfterAi,
+} from "@/lib/db";
 import { analyzeDocumentWithOpenAI, mapOpenAiError } from "@/lib/openAiAnalyze";
 import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
 
-type AnalyzeBody = {
-  document_id?: string;
-  storage_path?: string;
-  impresa_id?: string;
-  cantiere_id?: string;
-  file_name?: string;
-  file_type?: string;
-  impresa_nome?: string;
-};
+function jsonError(message: string, status: number) {
+  return Response.json({ ok: false, error: message }, { status });
+}
 
-async function loadDocumentFile(
-  accessToken: string | null,
-  body: AnalyzeBody
-): Promise<{ base64: string; mimeType: string; fileName: string }> {
-  if (!accessToken) {
-    throw new Error("Sessione non valida. Effettua di nuovo l'accesso.");
-  }
-
-  const supabase = createSupabaseServer(accessToken);
-  let storagePath = body.storage_path || null;
-  let mimeType = body.file_type || "application/pdf";
-  let fileName = body.file_name || "documento.pdf";
-
-  if (body.document_id) {
-    const { data: row, error } = await supabase
-      .from("documents")
-      .select("storage_path, tipo_file, nome_file, impresa_id")
-      .eq("id", body.document_id)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-    if (!row?.storage_path) {
-      throw new Error("Documento non trovato nello Storage.");
-    }
-
-    if (body.impresa_id && row.impresa_id && String(row.impresa_id) !== String(body.impresa_id)) {
-      throw new Error("Documento non associato a questa impresa.");
-    }
-
-    storagePath = row.storage_path;
-    mimeType = row.tipo_file || mimeType;
-    fileName = row.nome_file || fileName;
-  }
-
-  if (!storagePath) {
-    throw new Error("Riferimento documento mancante. Ricarica il file e riprova.");
-  }
-
-  const { data: blob, error: downloadError } = await supabase.storage
-    .from("documents")
-    .download(storagePath);
-
-  if (downloadError || !blob) {
-    throw new Error("Impossibile scaricare il documento dallo Storage.");
-  }
-
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  if (!buffer.length) {
-    throw new Error("Documento non leggibile dall'AI.");
-  }
-
-  return {
-    base64: buffer.toString("base64"),
-    mimeType: mimeType || blob.type || "application/pdf",
-    fileName,
-  };
+function getFormString(formData: FormData, key: string) {
+  const value = formData.get(key);
+  if (value == null) return "";
+  return String(value).trim();
 }
 
 export async function POST(request: Request) {
@@ -83,19 +29,40 @@ export async function POST(request: Request) {
 
   try {
     if (!hasApiKey) {
-      return Response.json(
-        { ok: false, error: "Chiave OpenAI non configurata." },
-        { status: 500 }
-      );
+      return jsonError("Chiave OpenAI non configurata.", 500);
     }
 
-    const body = (await request.json()) as AnalyzeBody;
     const accessToken = getBearerToken(request);
+    if (!accessToken) {
+      return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
+    }
 
-    const { base64, mimeType, fileName } = await loadDocumentFile(accessToken, body);
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const impresaId = getFormString(formData, "impresaId");
+    const cantiereId = getFormString(formData, "cantiereId");
+    const impresaNome = getFormString(formData, "impresaNome");
+
+    if (!file || !(file instanceof File)) {
+      return jsonError("File mancante. Seleziona un documento da analizzare.", 400);
+    }
+    if (!impresaId) {
+      return jsonError("Impresa non valida. Ricarica la pagina e riprova.", 400);
+    }
+    if (!cantiereId) {
+      return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    if (!buffer.length) {
+      return jsonError("Documento non leggibile dall'AI.", 422);
+    }
+
+    const mimeType = file.type || "application/pdf";
+    const fileName = file.name || "documento.pdf";
 
     const rawText = await analyzeDocumentWithOpenAI({
-      base64,
+      base64: buffer.toString("base64"),
       mimeType,
       fileName,
     });
@@ -105,8 +72,50 @@ export async function POST(request: Request) {
     const warnings = appendImpresaMismatchWarning(
       aiPayload.warnings,
       aiPayload.extracted_data?.impresa,
-      body.impresa_nome
+      impresaNome
     );
+
+    const supabase = createSupabaseServer(accessToken);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
+    }
+
+    const current = await loadImpresaStateForAi(supabase, impresaId);
+    const applied = applyAiUpdates(
+      {
+        checks: current.checks,
+        allegati: current.allegati,
+        allegatiScadenze: current.allegatiScadenze,
+        maestranze: current.maestranze,
+      },
+      updates
+    );
+
+    await persistImpresaStateAfterAi(supabase, impresaId, {
+      checks: applied.checks,
+      note: current.note,
+      allegati: applied.allegati,
+      allegatiScadenze: applied.allegatiScadenze,
+      maestranze: applied.maestranze,
+    });
+
+    await insertDocumentAnalysisServer(supabase, user.id, {
+      impresa_id: impresaId,
+      cantiere_id: cantiereId,
+      status: "completed",
+      document_type: aiPayload.document_type,
+      confidence: aiPayload.confidence,
+      summary: aiPayload.summary,
+      extracted_data: aiPayload.extracted_data,
+      applied_changes: applied.applied_changes,
+      skipped_changes: applied.skipped_changes,
+      warnings,
+    });
 
     return Response.json({
       ok: true,
@@ -114,8 +123,15 @@ export async function POST(request: Request) {
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
       extracted_data: aiPayload.extracted_data,
-      updates,
+      applied_changes: applied.applied_changes,
+      skipped_changes: applied.skipped_changes,
       warnings,
+      state: {
+        checks: applied.checks,
+        allegati: applied.allegati,
+        allegatiScadenze: applied.allegatiScadenze,
+        maestranze: applied.maestranze,
+      },
     });
   } catch (error: unknown) {
     const message = mapOpenAiError(error, hasApiKey);
@@ -125,6 +141,6 @@ export async function POST(request: Request) {
         ? 500
         : 422;
 
-    return Response.json({ ok: false, error: message }, { status });
+    return jsonError(message, status);
   }
 }
