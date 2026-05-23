@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { replaceMaestranzeImpresa } from "@/lib/db";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { calcScadenza, isExpired, isExpiringSoon } from "@/lib/utils";
+import { calcScadenza } from "@/lib/utils";
 
 const OPTIONAL_COLS = [
   { key: "preposto", label: "Preposto", scadType: "preposto" },
@@ -40,19 +40,106 @@ const hasVal = v => v != null && String(v).trim() !== "";
 export const isBoolChecked = v =>
   v === true || v === "true" || v === "✓" || v === "si" || v === "Sì";
 
-function scadenzaPillClass(displayValue) {
-  if (!displayValue || displayValue === "—" || displayValue === "✓")
-    return "maestranze-pill maestranze-pill-empty";
-  if (isExpired(displayValue)) return "maestranze-pill maestranze-pill-expired";
-  if (isExpiringSoon(displayValue)) return "maestranze-pill maestranze-pill-soon";
-  return "maestranze-pill maestranze-pill-valid";
+const DEADLINE_PILL_BASE = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 52,
+  padding: "4px 8px",
+  borderRadius: 8,
+  fontSize: 11,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+  lineHeight: 1.2,
+};
+
+const DEADLINE_BADGE_STYLE = {
+  empty: { background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" },
+  ind: { background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0" },
+  expired: { background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" },
+  warning: { background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" },
+  valid: { background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0" },
+};
+
+function startOfDay(date) {
+  const d = new Date(date);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function DatePill({ value }) {
-  if (!hasVal(value)) {
-    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
+/** YYYY-MM-DD, DD/MM/YYYY, DD/MM/YY (2000+YY) */
+export function parseDeadlineDate(value) {
+  if (value == null || value === "") return null;
+  const t = String(value).trim();
+  if (!t || t === "—" || t === "✓") return null;
+  if (t.toUpperCase() === "IND") return null;
+
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const d = new Date(
+      parseInt(iso[1], 10),
+      parseInt(iso[2], 10) - 1,
+      parseInt(iso[3], 10)
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
   }
-  return <span className={scadenzaPillClass(String(value))}>{value}</span>;
+
+  const slash = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (slash) {
+    const day = parseInt(slash[1], 10);
+    const month = parseInt(slash[2], 10);
+    let year = parseInt(slash[3], 10);
+    if (slash[3].length === 2) year = 2000 + year;
+    const d = new Date(year, month - 1, day);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
+}
+
+export function getDeadlineStatus(value) {
+  if (value == null || value === undefined) return "empty";
+  const text = String(value).trim();
+  if (!text || text === "—" || text === "✓") return "empty";
+  if (text.toUpperCase() === "IND") return "ind";
+
+  const parsed = parseDeadlineDate(value);
+  if (!parsed) return "empty";
+
+  const today = startOfDay(new Date());
+  const exp = startOfDay(parsed);
+  const diffDays = Math.round((exp.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays < 0) return "expired";
+  if (diffDays < 60) return "warning";
+  return "valid";
+}
+
+function DeadlineBadge({ status, children }) {
+  const tone = DEADLINE_BADGE_STYLE[status] || DEADLINE_BADGE_STYLE.empty;
+  return (
+    <span style={{ ...DEADLINE_PILL_BASE, ...tone }} role="status">
+      {children}
+    </span>
+  );
+}
+
+export function renderDeadlineCell(value) {
+  const status = getDeadlineStatus(value);
+
+  if (status === "empty") {
+    return <DeadlineBadge status="empty">—</DeadlineBadge>;
+  }
+
+  const label = String(value).trim();
+  return <DeadlineBadge status={status}>{label}</DeadlineBadge>;
+}
+
+function renderTrainingDeadlineCell(val, scadType) {
+  if (!hasVal(val)) return renderDeadlineCell("");
+  if (!scadType) return renderDeadlineCell(val);
+  const disp = calcScadenza(val, scadType);
+  if (disp === "✓") return renderDeadlineCell("");
+  return renderDeadlineCell(disp);
 }
 
 function renderBoolBadge(v) {
@@ -60,27 +147,6 @@ function renderBoolBadge(v) {
     return <span className="maestranze-bool maestranze-bool-yes">✓ Sì</span>;
   }
   return <span className="maestranze-bool maestranze-bool-no">No</span>;
-}
-
-function renderDateCell(val, scadType) {
-  if (!hasVal(val)) {
-    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
-  }
-  const disp = scadType ? calcScadenza(val, scadType) : val;
-  if (disp === "✓") {
-    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
-  }
-  return <span className={scadenzaPillClass(String(disp))}>{disp}</span>;
-}
-
-function renderUnilavCell(val) {
-  if (!hasVal(val)) {
-    return <span className="maestranze-pill maestranze-pill-empty">—</span>;
-  }
-  if (String(val).trim().toUpperCase() === "IND") {
-    return <span className="maestranze-pill maestranze-pill-neutral">{val}</span>;
-  }
-  return <DatePill value={val} />;
 }
 
 function MaestranzeFormField({ label, value, onChange, hint }) {
@@ -349,14 +415,6 @@ export function MaestranzeTab({
     "UNILAV",
   ];
 
-  const renderIdoneitaCell = val => {
-    if (!hasVal(val)) {
-      return <span className="maestranze-pill maestranze-pill-empty">—</span>;
-    }
-    const text = String(val);
-    return <span className={scadenzaPillClass(text)}>{text}</span>;
-  };
-
   return (
     <>
       <div className="maestranze-root">
@@ -431,27 +489,19 @@ export function MaestranzeTab({
           <div className="maestranze-stack-body">
             <div className="maestranze-legend-bar" aria-label="Legenda scadenze">
               <span className="maestranze-legend-item">
-                <span className="maestranze-pill maestranze-pill-valid maestranze-legend-sample">
-                  OK
-                </span>
+                <DeadlineBadge status="valid">OK</DeadlineBadge>
                 Valido
               </span>
               <span className="maestranze-legend-item">
-                <span className="maestranze-pill maestranze-pill-soon maestranze-legend-sample">
-                  60g
-                </span>
+                <DeadlineBadge status="warning">60g</DeadlineBadge>
                 In scadenza
               </span>
               <span className="maestranze-legend-item">
-                <span className="maestranze-pill maestranze-pill-expired maestranze-legend-sample">
-                  !
-                </span>
+                <DeadlineBadge status="expired">!</DeadlineBadge>
                 Scaduto
               </span>
               <span className="maestranze-legend-item">
-                <span className="maestranze-pill maestranze-pill-empty maestranze-legend-sample">
-                  —
-                </span>
+                <DeadlineBadge status="empty">—</DeadlineBadge>
                 Dato assente
               </span>
               <span className="maestranze-legend-note">
@@ -509,23 +559,23 @@ export function MaestranzeTab({
                             {renderBoolBadge(m.dpi)}
                           </td>
                           <td className="maestranze-td maestranze-td-center">
-                            {renderIdoneitaCell(m.idoneita)}
+                            {renderDeadlineCell(m.idoneita)}
                           </td>
                           <td className="maestranze-td maestranze-td-center">
                             {renderBoolBadge(m.formazioneBase)}
                           </td>
                           <td className="maestranze-td maestranze-td-center">
-                            {renderDateCell(m.formazioneSpec, "formazioneSpec")}
+                            {renderTrainingDeadlineCell(m.formazioneSpec, "formazioneSpec")}
                           </td>
                           <td className="maestranze-td maestranze-td-center">
-                            {renderUnilavCell(m.unilav)}
+                            {renderDeadlineCell(m.unilav)}
                           </td>
                           {visibleOptional.map(col => (
                             <td
                               key={col.key}
                               className="maestranze-td maestranze-td-center"
                             >
-                              {renderDateCell(m[col.key], col.scadType)}
+                              {renderTrainingDeadlineCell(m[col.key], col.scadType)}
                             </td>
                           ))}
                           <td

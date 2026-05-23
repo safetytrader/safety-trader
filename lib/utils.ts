@@ -107,23 +107,52 @@ export function calcScadenza(dataConseguimento, tipoCorso) {
   return `${d}/${m}/${y}`;
 }
 
-// Parse data
+function startOfDay(date) {
+  const d = new Date(date);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** DD/MM/YYYY, DD/MM/YY (→ 20YY), YYYY-MM-DD */
 export function parseDate(ds) {
-  if (!ds || ds === "✓") return null;
-  const p = ds.split("/");
-  if (p.length !== 3) return null;
-  return new Date(`${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}-${p[0]}`);
+  if (ds == null || ds === "" || ds === "—" || ds === "✓") return null;
+  const t = String(ds).trim();
+  if (!t) return null;
+
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const y = parseInt(iso[1], 10);
+    const m = parseInt(iso[2], 10);
+    const day = parseInt(iso[3], 10);
+    const d = new Date(y, m - 1, day);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const slash = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (slash) {
+    const day = parseInt(slash[1], 10);
+    const month = parseInt(slash[2], 10);
+    let year = parseInt(slash[3], 10);
+    if (slash[3].length === 2) year = 2000 + year;
+    const d = new Date(year, month - 1, day);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
 }
 
 export function isExpired(ds) {
   const d = parseDate(ds);
-  return d ? d < new Date() : false;
+  if (!d) return false;
+  const today = startOfDay(new Date());
+  return startOfDay(d).getTime() < today.getTime();
 }
 
 export function isExpiringSoon(ds) {
   const d = parseDate(ds);
   if (!d) return false;
-  const diff = (d - new Date()) / 86400000;
+  const today = startOfDay(new Date());
+  const exp = startOfDay(d);
+  const diff = Math.round((exp.getTime() - today.getTime()) / 86400000);
   return diff >= 0 && diff < 60;
 }
 
