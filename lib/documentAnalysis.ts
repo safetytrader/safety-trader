@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { ALLEGATI_CONFIG, CHECKLIST_ITEMS } from "@/lib/constants";
+import { ALLEGATI_CONFIG, CHECKLIST_ITEMS, FORMATION_SCADENZA } from "@/lib/constants";
 import {
   deduplicateWorkers,
   isFormationLikeQualifica,
@@ -378,6 +378,8 @@ function normalizeExtractedData(raw = {}) {
     mansione: raw.mansione ?? null,
     qualifica: raw.qualifica ?? null,
     data_emissione: raw.data_emissione ?? null,
+    data_documento: raw.data_documento ?? null,
+    data_giudizio: raw.data_giudizio ?? null,
     data_erogazione: raw.data_erogazione ?? null,
     data_scadenza: raw.data_scadenza ?? null,
     data_fine_contratto: raw.data_fine_contratto ?? null,
@@ -441,20 +443,177 @@ function pushFormazioneWorker(updates, extracted, fields, mappingWarnings) {
 
 /** Normalizza una data in YYYY-MM-DD se possibile. */
 function normalizeIsoDateOnly(value) {
+  return normalizeDate(value);
+}
+
+/** YYYY-MM-DD, DD/MM/YYYY, DD/MM/YY (2000+YY). */
+export function normalizeDate(value) {
   if (value == null || value === "") return null;
   const t = String(value).trim();
-  if (!t) return null;
+  if (!t || t === "—" || t === "✓") return null;
+  if (t.toUpperCase() === "IND") return null;
 
-  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  }
 
-  const slash = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const slash = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
   if (slash) {
-    const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    let year = parseInt(slash[3], 10);
+    if (slash[3].length === 2) year = 2000 + year;
     return `${year}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}`;
   }
 
   return null;
+}
+
+export const EXPIRING_DOCUMENT_RULES = {
+  VISURA: { baseDate: "data_emissione", addMonths: 6 },
+  FORMAZIONE_SPECIFICA: { baseDate: "data_fine_or_erogazione", addYears: 5 },
+  FORMAZIONE_BASE_SPECIFICA: { baseDate: "data_fine_or_erogazione", addYears: 5 },
+  // TODO: RSPP/RLS — usare solo data_scadenza esplicita finché non è definita durata configurata
+};
+
+const MAESTRANZA_EXPIRING_FIELDS = new Set([
+  "idoneita",
+  "formazioneSpec",
+  "unilav",
+  "preposto",
+  "antincendio",
+  "ps",
+  "ponteggiatori",
+  "mdt",
+  "ple",
+  "gruista",
+  "confinati",
+]);
+
+const MAESTRANZA_BOOLEAN_FIELDS = new Set(["formazioneBase", "dpi"]);
+
+export function shouldUpdateUnilavField(currentValue, newValue) {
+  if (isFieldEmpty(newValue)) return false;
+  const newUpper = String(newValue).trim().toUpperCase();
+  if (isFieldEmpty(currentValue)) return true;
+  const curUpper = String(currentValue).trim().toUpperCase();
+
+  if (newUpper === "IND") {
+    return curUpper !== "IND";
+  }
+  if (curUpper === "IND") {
+    return false;
+  }
+
+  const newIso = normalizeDate(newValue);
+  if (!newIso) return false;
+  const curIso = normalizeDate(currentValue);
+  if (!curIso) return true;
+  return newIso > curIso;
+}
+
+export function shouldUpdateExpiringField(currentValue, newValue, fieldKey = "") {
+  if (isFieldEmpty(newValue)) return false;
+  if (fieldKey === "unilav") return shouldUpdateUnilavField(currentValue, newValue);
+  if (isFieldEmpty(currentValue)) return true;
+
+  const newIso = normalizeDate(newValue);
+  if (!newIso) return false;
+  const curIso = normalizeDate(currentValue);
+  if (!curIso) return true;
+  return newIso > curIso;
+}
+
+function addMonthsIsoDate(isoYmd, months) {
+  const norm = normalizeDate(isoYmd);
+  if (!norm) return null;
+  const [y, m, d] = norm.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setMonth(date.getMonth() + months);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function toAppDateFromIso(iso) {
+  if (!iso) return null;
+  return formatIsoDateToApp(iso) || iso;
+}
+
+export function resolveVisuraScadenza(extracted = {}) {
+  const explicit = normalizeDate(extracted.data_scadenza);
+  if (explicit) return explicit;
+  const emissione = normalizeDate(
+    extracted.data_emissione || extracted.data_documento
+  );
+  if (emissione) return addMonthsIsoDate(emissione, EXPIRING_DOCUMENT_RULES.VISURA.addMonths);
+  return null;
+}
+
+export function resolveIdoneitaScadenza(extracted = {}) {
+  return (
+    normalizeDate(extracted.data_scadenza) ||
+    normalizeDate(extracted.data_giudizio) ||
+    normalizeDate(extracted.data_emissione)
+  );
+}
+
+function formationYearsForKey(courseKey) {
+  const key = courseKey === "ponteggiatori" ? "ponteggi" : courseKey;
+  return FORMATION_SCADENZA[key];
+}
+
+export function resolveWorkerCourseFieldValue(extracted = {}, courseKey) {
+  const explicit = normalizeDate(extracted.data_scadenza);
+  if (explicit) return toAppDateFromIso(explicit);
+
+  const yearsRule = formationYearsForKey(courseKey);
+  const base = normalizeDate(
+    extracted.data_fine || extracted.data_erogazione || extracted.data_emissione
+  );
+  if (!base) return null;
+
+  if (typeof yearsRule === "number") {
+    return toAppDateFromIso(addYearsIsoDate(base, yearsRule));
+  }
+  if (typeof yearsRule === "function") {
+    return toAppDateFromIso(addYearsIsoDate(base, yearsRule("A")));
+  }
+
+  return toAppDateFromIso(base);
+}
+
+function findMaestranzaIndex(maestranze, worker) {
+  const cf = String(worker.codiceFiscale || "")
+    .replace(/\s/g, "")
+    .toUpperCase();
+  if (cf) {
+    const byCf = maestranze.findIndex(m => {
+      const mcf = String(m.codiceFiscale || "")
+        .replace(/\s/g, "")
+        .toUpperCase();
+      return mcf && mcf === cf;
+    });
+    if (byCf >= 0) return byCf;
+  }
+  return maestranze.findIndex(m => nameSimilarity(m.nome, worker.nome) >= 0.75);
+}
+
+function shouldUpdateBooleanMaestranzaField(currentValue, newValue) {
+  const isOn =
+    newValue === true ||
+    newValue === "true" ||
+    newValue === "✓" ||
+    newValue === "si" ||
+    newValue === "Sì";
+  if (!isOn) return false;
+  return !(
+    currentValue === true ||
+    currentValue === "true" ||
+    currentValue === "✓" ||
+    currentValue === "si" ||
+    currentValue === "Sì"
+  );
 }
 
 /**
@@ -543,6 +702,10 @@ function workerFromExtracted(extracted, fields = {}, options = {}) {
   const nome = normalizeWorkerName(extracted.lavoratore || "");
   if (!nome) return null;
   const w = { nome, ...fields };
+  const cf = String(extracted.codice_fiscale_lavoratore || "")
+    .replace(/\s/g, "")
+    .toUpperCase();
+  if (cf) w.codiceFiscale = cf;
   if (options.withQualifica) {
     const qualifica = extractWorkerQualifica(extracted);
     if (qualifica) w.qualifica = qualifica;
@@ -564,25 +727,26 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
   };
   const mappingWarnings = [];
 
-  const scadenza = formatIsoDateToApp(extracted.data_scadenza);
-  const erogazione = formatIsoDateToApp(extracted.data_erogazione || extracted.data_emissione);
-  const fineContratto = formatIsoDateToApp(extracted.data_fine_contratto);
+  const scadenzaIso = normalizeDate(extracted.data_scadenza);
+  const scadenzaApp = scadenzaIso ? toAppDateFromIso(scadenzaIso) : null;
   const confidence = typeof meta.confidence === "number" ? meta.confidence : 0;
 
   switch (type) {
     case "DURC":
       updates.checklist.durc = "si";
       updates.allegati.durc = true;
-      if (scadenza) updates.allegatiScadenze.durc = scadenza;
+      if (scadenzaApp) updates.allegatiScadenze.durc = scadenzaApp;
       break;
     case "POS":
       mappingWarnings.push(...applyPosChecklistMapping(updates, confidence));
       break;
-    case "VISURA":
+    case "VISURA": {
       updates.checklist.visura = "si";
       updates.allegati.visura = true;
-      if (scadenza) updates.allegatiScadenze.visura = scadenza;
+      const visuraScad = resolveVisuraScadenza(extracted);
+      if (visuraScad) updates.allegatiScadenze.visura = toAppDateFromIso(visuraScad);
       break;
+    }
     case "FORMAZIONE_BASE": {
       pushFormazioneWorker(
         updates,
@@ -607,7 +771,8 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "IDONEITA": {
-      const idoneita = scadenza || formatIsoDateToApp(extracted.data_emissione);
+      const idoneitaIso = resolveIdoneitaScadenza(extracted);
+      const idoneita = idoneitaIso ? toAppDateFromIso(idoneitaIso) : null;
       const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {}, {
         withQualifica: true,
       });
@@ -623,42 +788,50 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "PREPOSTO": {
-      const w = workerFromExtracted(extracted, { preposto: erogazione || "✓" });
+      const preposto = resolveWorkerCourseFieldValue(extracted, "preposto");
+      const w = workerFromExtracted(extracted, preposto ? { preposto } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "ANTINCENDIO": {
-      const w = workerFromExtracted(extracted, { antincendio: erogazione || "✓" });
+      const antincendio = resolveWorkerCourseFieldValue(extracted, "antincendio");
+      const w = workerFromExtracted(extracted, antincendio ? { antincendio } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "PRIMO_SOCCORSO": {
-      const w = workerFromExtracted(extracted, { ps: erogazione || "✓" });
+      const ps = resolveWorkerCourseFieldValue(extracted, "ps");
+      const w = workerFromExtracted(extracted, ps ? { ps } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "PONTEGGI": {
-      const w = workerFromExtracted(extracted, { ponteggiatori: erogazione || "✓" });
+      const ponteggiatori = resolveWorkerCourseFieldValue(extracted, "ponteggiatori");
+      const w = workerFromExtracted(extracted, ponteggiatori ? { ponteggiatori } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "MMT": {
-      const w = workerFromExtracted(extracted, { mdt: erogazione || "✓" });
+      const mdt = resolveWorkerCourseFieldValue(extracted, "mdt");
+      const w = workerFromExtracted(extracted, mdt ? { mdt } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "PLE": {
-      const w = workerFromExtracted(extracted, { ple: erogazione || "✓" });
+      const ple = resolveWorkerCourseFieldValue(extracted, "ple");
+      const w = workerFromExtracted(extracted, ple ? { ple } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "GRU": {
-      const w = workerFromExtracted(extracted, { gruista: erogazione || "✓" });
+      const gruista = resolveWorkerCourseFieldValue(extracted, "gruista");
+      const w = workerFromExtracted(extracted, gruista ? { gruista } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
     case "SPAZI_CONFINATI": {
-      const w = workerFromExtracted(extracted, { confinati: erogazione || "✓" });
+      const confinati = resolveWorkerCourseFieldValue(extracted, "confinati");
+      const w = workerFromExtracted(extracted, confinati ? { confinati } : {});
       if (w) updates.maestranze.push(w);
       break;
     }
@@ -892,18 +1065,118 @@ export function buildMockAnalysis({ fileName, documentType, extractedOverrides =
   };
 }
 
-function recordApplied(applied, section, key, value) {
+function recordApplied(applied, section, key, value, meta = {}) {
   if (!applied[section]) applied[section] = {};
-  applied[section][key] = value;
+  if (meta.previous !== undefined || meta.reason) {
+    applied[section][key] = {
+      previous: meta.previous,
+      value,
+      reason: meta.reason || "aggiornamento",
+    };
+  } else {
+    applied[section][key] = value;
+  }
 }
 
-function recordSkipped(skipped, section, key, existing, proposed) {
+function recordSkipped(skipped, section, key, existing, proposed, reason = "") {
   if (!skipped[section]) skipped[section] = {};
-  skipped[section][key] = { existing, proposed };
+  skipped[section][key] = {
+    existing,
+    proposed,
+    ...(reason ? { reason } : {}),
+  };
+}
+
+function applyMaestranzaField({
+  merged,
+  existing,
+  field,
+  value,
+  workerApplied,
+  workerSkipped,
+}) {
+  if (field === "nome" || field === "codiceFiscale") return;
+
+  if (MAESTRANZA_BOOLEAN_FIELDS.has(field)) {
+    if (!shouldUpdateBooleanMaestranzaField(existing[field], value)) {
+      if (!isFieldEmpty(value)) {
+        workerSkipped[field] = {
+          existing: existing[field],
+          proposed: value,
+          reason: "valore già presente",
+        };
+      }
+      return;
+    }
+    merged[field] = true;
+    workerApplied[field] = {
+      previous: existing[field],
+      value: true,
+      reason: "flag attivo",
+    };
+    return;
+  }
+
+  if (field === "qualifica") {
+    if (isFormationLikeQualifica(value)) {
+      workerSkipped[field] = {
+        existing: existing.qualifica,
+        proposed: value,
+        reason: "qualifica non valida da formazione",
+      };
+      return;
+    }
+    if (!isFieldEmpty(existing.qualifica)) {
+      workerSkipped[field] = {
+        existing: existing.qualifica,
+        proposed: value,
+        reason: "valore esistente più recente",
+      };
+      return;
+    }
+    if (isFieldEmpty(value)) return;
+    merged.qualifica = value;
+    workerApplied.qualifica = {
+      previous: existing.qualifica,
+      value,
+      reason: "campo vuoto",
+    };
+    return;
+  }
+
+  if (!MAESTRANZA_EXPIRING_FIELDS.has(field)) return;
+
+  if (isFieldEmpty(value)) {
+    workerSkipped[field] = {
+      existing: existing[field],
+      proposed: value,
+      reason: "dato nuovo non disponibile o non attendibile",
+    };
+    return;
+  }
+
+  if (!shouldUpdateExpiringField(existing[field], value, field)) {
+    workerSkipped[field] = {
+      existing: existing[field],
+      proposed: value,
+      reason: isFieldEmpty(existing[field])
+        ? "dato nuovo non disponibile o non attendibile"
+        : "valore esistente più recente",
+    };
+    return;
+  }
+
+  const previous = merged[field];
+  merged[field] = value;
+  workerApplied[field] = {
+    previous,
+    value,
+    reason: isFieldEmpty(existing[field]) ? "campo vuoto" : "scadenza più recente",
+  };
 }
 
 /**
- * Applica aggiornamenti AI senza sovrascrivere campi già compilati.
+ * Applica aggiornamenti AI: per le scadenze mantiene sempre il dato più recente.
  */
 export function applyAiUpdates(current = {}, updates = {}) {
   const checks = { ...(current.checks || {}) };
@@ -952,11 +1225,24 @@ export function applyAiUpdates(current = {}, updates = {}) {
     if (isFieldEmpty(value)) continue;
     const key = resolveAllegatoKey(rawKey) || rawKey;
     if (!key) continue;
-    if (isFieldEmpty(allegatiScadenze[key])) {
+    const previous = allegatiScadenze[key];
+    if (shouldUpdateExpiringField(previous, value, key)) {
       allegatiScadenze[key] = value;
-      recordApplied(applied_changes, "allegatiScadenze", key, value);
+      recordApplied(applied_changes, "allegatiScadenze", key, value, {
+        previous,
+        reason: isFieldEmpty(previous) ? "campo vuoto" : "scadenza più recente",
+      });
     } else {
-      recordSkipped(skipped_changes, "allegatiScadenze", key, allegatiScadenze[key], value);
+      recordSkipped(
+        skipped_changes,
+        "allegatiScadenze",
+        key,
+        previous,
+        value,
+        isFieldEmpty(previous)
+          ? "dato nuovo non disponibile o non attendibile"
+          : "valore esistente più recente"
+      );
     }
   }
 
@@ -971,9 +1257,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
       delete incomingWorker.qualifica;
     }
 
-    const idx = maestranze.findIndex(
-      m => nameSimilarity(m.nome, incomingWorker.nome) >= 0.75
-    );
+    const idx = findMaestranzaIndex(maestranze, incomingWorker);
     if (idx >= 0) {
       const existing = { ...maestranze[idx] };
       const merged = { ...existing };
@@ -981,39 +1265,36 @@ export function applyAiUpdates(current = {}, updates = {}) {
       if (nomeNorm && merged.nome !== nomeNorm) {
         merged.nome = nomeNorm;
       }
+      if (incomingWorker.codiceFiscale && !merged.codiceFiscale) {
+        merged.codiceFiscale = incomingWorker.codiceFiscale;
+      }
       const workerApplied = {};
       const workerSkipped = {};
       if (nomeNorm && existing.nome !== nomeNorm) {
-        workerApplied.nome = nomeNorm;
+        workerApplied.nome = {
+          previous: existing.nome,
+          value: nomeNorm,
+          reason: "normalizzazione nominativo",
+        };
       }
       for (const [field, value] of Object.entries(incomingWorker)) {
-        if (field === "nome") continue;
-        if (isFieldEmpty(value)) continue;
-        if (field === "qualifica") {
-          if (isFormationLikeQualifica(value)) {
-            workerSkipped[field] = { existing: existing.qualifica, proposed: value };
-            continue;
-          }
-          if (!isFieldEmpty(existing.qualifica)) {
-            workerSkipped[field] = { existing: existing.qualifica, proposed: value };
-            continue;
-          }
-        }
-        if (isFieldEmpty(existing[field])) {
-          merged[field] = value;
-          workerApplied[field] = value;
-        } else {
-          workerSkipped[field] = { existing: existing[field], proposed: value };
-        }
+        applyMaestranzaField({
+          merged,
+          existing,
+          field,
+          value,
+          workerApplied,
+          workerSkipped,
+        });
       }
       maestranze[idx] = merged;
       if (Object.keys(workerApplied).length) {
         if (!applied_changes.maestranze) applied_changes.maestranze = [];
-        applied_changes.maestranze.push({ nome: existing.nome, fields: workerApplied });
+        applied_changes.maestranze.push({ nome: merged.nome, fields: workerApplied });
       }
       if (Object.keys(workerSkipped).length) {
         if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
-        skipped_changes.maestranze.push({ nome: existing.nome, fields: workerSkipped });
+        skipped_changes.maestranze.push({ nome: merged.nome, fields: workerSkipped });
       }
     } else {
       const nuova = { ...incomingWorker };
@@ -1022,7 +1303,12 @@ export function applyAiUpdates(current = {}, updates = {}) {
       }
       maestranze.push(nuova);
       if (!applied_changes.maestranze) applied_changes.maestranze = [];
-      applied_changes.maestranze.push({ nome: nuova.nome, created: true, fields: { ...nuova } });
+      applied_changes.maestranze.push({
+        nome: nuova.nome,
+        created: true,
+        fields: { ...nuova },
+        reason: "nuova maestranza",
+      });
     }
   }
 
