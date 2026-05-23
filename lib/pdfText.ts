@@ -129,6 +129,12 @@ export function buildDocumentHints(fileName = "", text = "") {
   ) {
     hints.push("ANTINCENDIO");
   } else if (
+    /\bgru\b|gruista|gru\s+a\s+torre|gru\s+mobile|conduzione\s+di\s+gru|addett[oi].*gru|operatore\s+gru|abilitazione\s+gru|rotazione\s+in\s+(basso|alto)|art\.\s*73/.test(
+      sample
+    )
+  ) {
+    hints.push("GRU");
+  } else if (
     /rischio\s+(alto|medio|basso|elevato)|lavoratori.*\b(8|12|16)\s*ore|formazione\s+lavoratori\s+complet|modulo\s+generale.*modulo\s+specifico|generale\s+e\s+specifica/.test(
       sample
     )
@@ -152,9 +158,6 @@ export function buildDocumentHints(fileName = "", text = "") {
   }
   if (/\bple\b/.test(sample)) {
     hints.push("PLE");
-  }
-  if (/\bgru\b|gruista/.test(sample)) {
-    hints.push("GRU");
   }
   if (/spazi\s+confinat|confinat/.test(sample)) {
     hints.push("SPAZI_CONFINATI");

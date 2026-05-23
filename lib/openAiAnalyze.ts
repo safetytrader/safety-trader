@@ -18,7 +18,8 @@ Estrai solo campi pertinenti al tipo:
 - IDONEITA: lavoratore, mansione, data_emissione, data_scadenza
 - PREPOSTO (priorità su formazione lavoratori): lavoratore, codice_fiscale_lavoratore, corso, data_erogazione, data_inizio, data_fine, data_scadenza se espressa, durata_ore
 - ANTINCENDIO (priorità su formazione lavoratori): lavoratore, codice_fiscale_lavoratore, corso, data_erogazione, data_inizio, data_fine, data_scadenza se espressa, durata_ore, rischio/livello (basso/medio/alto/elevato)
-- FORMAZIONE_* (solo attestati lavoratori, NON preposto/antincendio): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
+- GRU (priorità su formazione lavoratori): lavoratore, codice_fiscale_lavoratore, corso, attrezzatura, data_erogazione, data_inizio, data_fine, data_scadenza se espressa, durata_ore
+- FORMAZIONE_* (solo attestati lavoratori, NON preposto/antincendio/gru): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
 
 Classificazione NOMINA/DESIGNAZIONE (priorità massima su attestati formativi):
 Se il documento è lettera di nomina/designazione/incarico SENZA attestato di frequenza/formazione/aggiornamento (senza durata ore, programma didattico, verifica finale, soggetto formatore, attestato di corso):
@@ -34,6 +35,9 @@ Se attestato/corso di formazione preposto (frequenza, durata ore, aggiornamento)
 
 Classificazione ANTINCENDIO (solo attestato formativo):
 Se attestato/corso antincendio con elementi di formazione (frequenza, durata ore, livello, programma) → ANTINCENDIO (NON nomina/designazione).
+
+Classificazione GRU (priorità su FORMAZIONE_*, solo attestato formativo):
+Se titolo/corso contiene gru, gru a torre, gru mobile, conduzione di gru, addetto alla conduzione di gru, operatore gru, abilitazione gru, attrezzatura gru, art. 73 attrezzature → document_type GRU (NON formazione base/specifica lavoratori).
 
 Classificazione formazione lavoratori:
 - FORMAZIONE_BASE: solo formazione generale/modulo generale/corso generale lavoratori, tipicamente 4 ore, SENZA formazione specifica o rischio specifico nel titolo.
@@ -69,7 +73,8 @@ Schema:
     "durata_ore": null,
     "rischio": null,
     "soggetto_formatore": null,
-    "tipo_formazione": null
+    "tipo_formazione": null,
+    "attrezzatura": null
   },
   "warnings": []
 }`;

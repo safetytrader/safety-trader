@@ -395,6 +395,7 @@ function normalizeExtractedData(raw = {}) {
     rischio: raw.rischio ?? null,
     soggetto_formatore: raw.soggetto_formatore ?? null,
     tipo_formazione: raw.tipo_formazione ?? null,
+    attrezzatura: raw.attrezzatura ?? null,
   };
 }
 
@@ -590,6 +591,9 @@ const PREPOSTO_CLASSIFICATION_RE =
 const ANTINCENDIO_CLASSIFICATION_RE =
   /antincendio|addett[oa]?\s+(alla\s+)?antincendio|prevenzione\s+incendi|lotta\s+antincendio|gestione\s+(delle\s+)?emergenze|emergenze\s+antincendio|rischio\s+(basso|medio|elevato|alto)(\s+antincendio|\s+incendi)?|livello\s+[123](\s+antincendio|\s+incendi)?/;
 
+const GRU_CLASSIFICATION_RE =
+  /\bgru\b|gruista|gru\s+a\s+torre|gru\s+mobile|gru\s+per\s+autocarro|conduzione\s+di\s+gru|addett[oi]\s+(alla\s+)?conduzione\s+di\s+gru|operatore\s+gru|attestato\s+gru|abilitazione\s+gru|rotazione\s+in\s+basso|rotazione\s+in\s+alto|art\.\s*73.*81|attrezzatur.*gru/;
+
 const NOMINA_DESIGNATION_RE =
   /\b(nomina|designazione|incarico|incaricat[oa]|designat[oa]|conferimento\s+incarico|per\s+accettazione|firma\s+per\s+accettazione|lavoratore\s+incaricat[oa]|addett[oa]\s+designat[oa])\b/;
 
@@ -632,6 +636,7 @@ function classificationBlob(payload = {}, fileName = "") {
     extracted.tipo_formazione,
     extracted.rischio,
     extracted.soggetto_formatore,
+    extracted.attrezzatura,
   ]
     .filter(Boolean)
     .join(" ");
@@ -679,6 +684,10 @@ export function resolveAntincendioExpiryIso(extracted = {}) {
   return null;
 }
 
+export function resolveGruExpiryIso(extracted = {}) {
+  return resolveAntincendioExpiryIso(extracted);
+}
+
 export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
   const extracted = payload.extracted_data || {};
   const text = safeLower(
@@ -698,6 +707,7 @@ export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
 
   if (PREPOSTO_CLASSIFICATION_RE.test(text)) return "PREPOSTO";
   if (ANTINCENDIO_CLASSIFICATION_RE.test(text)) return "ANTINCENDIO";
+  if (GRU_CLASSIFICATION_RE.test(text)) return "GRU";
 
   const type = payload.document_type;
   return type == null || type === "" ? "ALTRO" : String(type);
@@ -949,7 +959,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "GRU": {
-      const gruista = resolveWorkerCourseFieldValue(extracted, "gruista");
+      const gruista = resolveGruExpiryIso(extracted);
       const w = workerFromExtracted(extracted, gruista ? { gruista } : {});
       if (w) updates.maestranze.push(w);
       break;
@@ -1023,6 +1033,11 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
   ) {
     mappingWarnings.push(
       "Documento riclassificato come ANTINCENDIO (priorità su formazione lavoratori)."
+    );
+  }
+  if (documentType === "GRU" && originalUpper && originalUpper !== "GRU") {
+    mappingWarnings.push(
+      "Documento riclassificato come GRU (priorità su formazione lavoratori)."
     );
   }
 
@@ -1102,6 +1117,14 @@ export function detectDocumentType(fileName = "") {
     return "ANTINCENDIO";
   }
   if (
+    n.includes("gru") ||
+    n.includes("gruista") ||
+    n.includes("conduzione di gru") ||
+    n.includes("gru a torre")
+  ) {
+    return "GRU";
+  }
+  if (
     n.includes("16 ore") ||
     n.includes("12 ore") ||
     n.includes("8 ore") ||
@@ -1119,7 +1142,6 @@ export function detectDocumentType(fileName = "") {
   if (n.includes("pontegg")) return "PONTEGGI";
   if (n.includes("mmt") || n.includes("mdt")) return "MMT";
   if (n.includes("ple")) return "PLE";
-  if (n.includes("gru")) return "GRU";
   if (n.includes("confinat") || n.includes("spazi")) return "SPAZI_CONFINATI";
   return "UNKNOWN";
 }
