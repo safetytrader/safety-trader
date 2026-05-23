@@ -359,35 +359,39 @@ export function buildSanitizedCheckRefs(refMap = {}) {
   return filterTrustedPageReferences(validated);
 }
 
+function normalizeExtractedData(raw = {}) {
+  const codiceFiscaleImpresa =
+    raw.codice_fiscale_impresa ?? raw.codice_fiscale ?? null;
+  const codiceFiscaleLavoratore = raw.codice_fiscale_lavoratore ?? null;
+
+  return {
+    impresa: raw.impresa ?? null,
+    codice_fiscale_impresa: codiceFiscaleImpresa,
+    codice_fiscale: codiceFiscaleImpresa ?? codiceFiscaleLavoratore ?? null,
+    lavoratore: raw.lavoratore ?? null,
+    codice_fiscale_lavoratore: codiceFiscaleLavoratore,
+    mansione: raw.mansione ?? null,
+    data_emissione: raw.data_emissione ?? null,
+    data_erogazione: raw.data_erogazione ?? null,
+    data_scadenza: raw.data_scadenza ?? null,
+    data_fine_contratto: raw.data_fine_contratto ?? null,
+    ente: raw.ente ?? null,
+    corso: raw.corso ?? null,
+    tipo_contratto: raw.tipo_contratto ?? null,
+  };
+}
+
 function normalizeAiPayload(raw) {
   const documentType = raw?.document_type;
+  const summary = String(raw?.summary ?? "").trim();
+
   return {
     document_type:
       documentType == null || documentType === "" ? "ALTRO" : String(documentType),
     confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
-    summary: raw?.summary || "",
-    extracted_data: {
-      impresa: raw?.extracted_data?.impresa ?? null,
-      lavoratore: raw?.extracted_data?.lavoratore ?? null,
-      codice_fiscale: raw?.extracted_data?.codice_fiscale ?? null,
-      mansione: raw?.extracted_data?.mansione ?? null,
-      data_emissione: raw?.extracted_data?.data_emissione ?? null,
-      data_erogazione: raw?.extracted_data?.data_erogazione ?? null,
-      data_scadenza: raw?.extracted_data?.data_scadenza ?? null,
-      data_fine_contratto: raw?.extracted_data?.data_fine_contratto ?? null,
-      ente: raw?.extracted_data?.ente ?? null,
-      corso: raw?.extracted_data?.corso ?? null,
-    },
-    updates: {
-      checklist: raw?.updates?.checklist || {},
-      checkRefs: {},
-      allegati: raw?.updates?.allegati || {},
-      allegatiScadenze: raw?.updates?.allegatiScadenze || {},
-      maestranze: Array.isArray(raw?.updates?.maestranze) ? raw.updates.maestranze : [],
-    },
-    references: raw?.references || { checklist: {} },
-    checklist_evidence: Array.isArray(raw?.checklist_evidence) ? raw.checklist_evidence : [],
-    warnings: Array.isArray(raw?.warnings) ? raw.warnings : [],
+    summary: summary.length > 200 ? summary.slice(0, 200) : summary,
+    extracted_data: normalizeExtractedData(raw?.extracted_data || {}),
+    warnings: Array.isArray(raw?.warnings) ? raw.warnings.slice(0, 5) : [],
   };
 }
 
@@ -529,24 +533,44 @@ export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
   };
 }
 
+/** Analisi standard veloce: solo mapping lato codice, senza riferimenti pagina. */
+export function buildFastFinalUpdates(aiPayload) {
+  const { updates, mappingWarnings } = mapExtractedToUpdates(
+    aiPayload.document_type,
+    aiPayload.extracted_data || {},
+    { confidence: aiPayload.confidence ?? 0 }
+  );
+
+  return {
+    updates: {
+      checklist: updates.checklist,
+      allegati: updates.allegati,
+      allegatiScadenze: updates.allegatiScadenze,
+      maestranze: updates.maestranze,
+      checkRefs: {},
+    },
+    mappingWarnings,
+  };
+}
+
 export function buildFinalUpdates(aiPayload) {
   const { updates: mapped, mappingWarnings } = mapExtractedToUpdates(
     aiPayload.document_type,
     aiPayload.extracted_data || {},
     { confidence: aiPayload.confidence ?? 0 }
   );
-  const merged = mergeAiUpdates(aiPayload.updates || {}, mapped);
+  const merged = mergeAiUpdates({}, mapped);
   const updates = enrichCheckRefsFromReferences(
     merged,
-    aiPayload.references || {},
+    {},
     aiPayload.document_type,
-    aiPayload.checklist_evidence || []
+    []
   );
   return {
     updates,
     mappingWarnings,
-    references: aiPayload.references || {},
-    checklist_evidence: aiPayload.checklist_evidence || [],
+    references: {},
+    checklist_evidence: [],
   };
 }
 

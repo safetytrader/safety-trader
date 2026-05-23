@@ -13,6 +13,8 @@ const EXTRACTED_FIELD_LABELS = {
   impresa: "Impresa",
   lavoratore: "Lavoratore",
   codice_fiscale: "Codice fiscale",
+  codice_fiscale_impresa: "Codice fiscale impresa",
+  codice_fiscale_lavoratore: "Codice fiscale lavoratore",
   mansione: "Mansione",
   data_emissione: "Data emissione",
   data_erogazione: "Data erogazione",
@@ -20,6 +22,7 @@ const EXTRACTED_FIELD_LABELS = {
   data_fine_contratto: "Data fine contratto",
   ente: "Ente",
   corso: "Corso",
+  tipo_contratto: "Tipo contratto",
 };
 
 function isExtractedValueVisible(value) {
@@ -86,7 +89,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
   const [resultModal, setResultModal] = useState(null);
 
   const runAnalysis = async file => {
-    if (!file) return;
+    if (!file || analyzing) return;
 
     setAnalyzing(true);
     setErrorMessage("");
@@ -121,7 +124,6 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       if (data.state) {
         updateImpresa(activeCantiere, activeImpresa, {
           checks: data.state.checks,
-          checkRefs: data.state.checkRefs || {},
           allegati: data.state.allegati,
           allegatiScadenze: data.state.allegatiScadenze,
           maestranze: data.state.maestranze,
@@ -266,7 +268,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                 <span className="upload-spinner" />
                 <span className="upload-status-text">Analisi in corso…</span>
                 <span className="upload-status-hint">
-                  L&apos;analisi può richiedere alcuni minuti.
+                  Sto leggendo il documento e aggiornando i dati disponibili.
                 </span>
               </div>
             ) : null}

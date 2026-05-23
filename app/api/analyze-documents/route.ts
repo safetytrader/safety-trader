@@ -1,7 +1,7 @@
 import {
   appendImpresaMismatchWarning,
   applyAiUpdates,
-  buildFinalUpdates,
+  buildFastFinalUpdates,
   parseAiJsonResponse,
 } from "@/lib/documentAnalysis";
 import {
@@ -9,7 +9,19 @@ import {
   loadImpresaStateForAi,
   persistImpresaStateAfterAi,
 } from "@/lib/db";
-import { analyzeDocumentWithOpenAI, mapOpenAiError } from "@/lib/openAiAnalyze";
+import {
+  analyzeDocumentTextWithOpenAI,
+  analyzeDocumentWithOpenAI,
+  mapOpenAiError,
+} from "@/lib/openAiAnalyze";
+import {
+  buildDocumentHints,
+  cleanDocumentText,
+  extractPdfText,
+  isImageMime,
+  isPdfMimeOrName,
+  isTextSufficient,
+} from "@/lib/pdfText";
 import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
@@ -26,6 +38,8 @@ function getFormString(formData: FormData, key: string) {
 
 export async function POST(request: Request) {
   const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
+
+  console.time("ai-analysis-total");
 
   try {
     if (!hasApiKey) {
@@ -61,20 +75,6 @@ export async function POST(request: Request) {
     const mimeType = file.type || "application/pdf";
     const fileName = file.name || "documento.pdf";
 
-    const rawText = await analyzeDocumentWithOpenAI({
-      base64: buffer.toString("base64"),
-      mimeType,
-      fileName,
-    });
-
-    const aiPayload = parseAiJsonResponse(rawText);
-    const { updates, mappingWarnings } = buildFinalUpdates(aiPayload);
-    const warnings = appendImpresaMismatchWarning(
-      [...(aiPayload.warnings || []), ...(mappingWarnings || [])],
-      aiPayload.extracted_data?.impresa,
-      impresaNome
-    );
-
     const supabase = createSupabaseServer(accessToken);
     const {
       data: { user },
@@ -85,11 +85,59 @@ export async function POST(request: Request) {
       return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
 
+    let analysisMode: "TEXT_FAST" | "FILE_FALLBACK" = "FILE_FALLBACK";
+    let rawAiResponse = "";
+
+    if (isPdfMimeOrName(mimeType, fileName) && !isImageMime(mimeType)) {
+      console.time("pdf-text-extraction");
+      const extractedRaw = await extractPdfText(buffer);
+      const cleanedText = cleanDocumentText(extractedRaw);
+      console.timeEnd("pdf-text-extraction");
+
+      if (isTextSufficient(cleanedText)) {
+        analysisMode = "TEXT_FAST";
+        const hints = buildDocumentHints(fileName, cleanedText);
+
+        console.time("openai-call");
+        rawAiResponse = await analyzeDocumentTextWithOpenAI({
+          fileName,
+          documentText: cleanedText,
+          hints,
+        });
+        console.timeEnd("openai-call");
+      }
+    }
+
+    if (analysisMode === "FILE_FALLBACK") {
+      const hints = buildDocumentHints(fileName, "");
+
+      console.time("openai-call");
+      rawAiResponse = await analyzeDocumentWithOpenAI({
+        base64: buffer.toString("base64"),
+        mimeType,
+        fileName,
+        hints,
+      });
+      console.timeEnd("openai-call");
+    }
+
+    console.log("mode-used", analysisMode);
+
+    const aiPayload = parseAiJsonResponse(rawAiResponse);
+    const { updates, mappingWarnings } = buildFastFinalUpdates(aiPayload);
+    const warnings = appendImpresaMismatchWarning(
+      [...(aiPayload.warnings || []), ...(mappingWarnings || [])],
+      aiPayload.extracted_data?.impresa,
+      impresaNome
+    );
+
     const current = await loadImpresaStateForAi(supabase, impresaId);
+    const preservedCheckRefs = current.checkRefs || {};
+
     const applied = applyAiUpdates(
       {
         checks: current.checks,
-        checkRefs: current.checkRefs || {},
+        checkRefs: preservedCheckRefs,
         allegati: current.allegati,
         allegatiScadenze: current.allegatiScadenze,
         maestranze: current.maestranze,
@@ -97,15 +145,10 @@ export async function POST(request: Request) {
       updates
     );
 
-    const extractedForHistory = {
-      ...(aiPayload.extracted_data || {}),
-      references: aiPayload.references || {},
-      checklist_evidence: aiPayload.checklist_evidence || [],
-    };
-
+    console.time("db-update");
     await persistImpresaStateAfterAi(supabase, impresaId, {
       checks: applied.checks,
-      checkRefs: applied.checkRefs || {},
+      checkRefs: preservedCheckRefs,
       note: current.note,
       allegati: applied.allegati,
       allegatiScadenze: applied.allegatiScadenze,
@@ -119,11 +162,15 @@ export async function POST(request: Request) {
       document_type: aiPayload.document_type,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
-      extracted_data: extractedForHistory,
+      extracted_data: {
+        ...(aiPayload.extracted_data || {}),
+        analysis_mode: analysisMode,
+      },
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,
       warnings,
     });
+    console.timeEnd("db-update");
 
     return Response.json({
       ok: true,
@@ -136,7 +183,7 @@ export async function POST(request: Request) {
       warnings,
       state: {
         checks: applied.checks,
-        checkRefs: applied.checkRefs || {},
+        checkRefs: preservedCheckRefs,
         allegati: applied.allegati,
         allegatiScadenze: applied.allegatiScadenze,
         maestranze: applied.maestranze,
@@ -151,5 +198,7 @@ export async function POST(request: Request) {
         : 422;
 
     return jsonError(message, status);
+  } finally {
+    console.timeEnd("ai-analysis-total");
   }
 }
