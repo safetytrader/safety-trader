@@ -3,24 +3,59 @@
 
 import { ALLEGATI_CONFIG } from "@/lib/constants";
 import { upsertAllegatiImpresa } from "@/lib/db";
-import { parseDate } from "@/lib/utils";
+import { getDeadlineStatus, parseDeadlineDate } from "@/components/impresa/MaestranzeTab";
 
-function parseScadenzaDate(value) {
-  if (!value || value === "—") return null;
-  const s = String(value).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const [y, m, d] = s.split("-").map(Number);
-    const date = new Date(y, m - 1, d);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-  return parseDate(s);
+const ALLEGATI_DATE_INPUT_BASE = {
+  width: "100%",
+  maxWidth: 168,
+  height: 36,
+  boxSizing: "border-box",
+  padding: "0 10px",
+  borderRadius: 10,
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: "inherit",
+  outline: "none",
+};
+
+const ALLEGATI_DATE_INPUT_TONE = {
+  empty: {
+    border: "1px solid #cbd5e1",
+    background: "#f8fafc",
+    color: "#94a3b8",
+  },
+  expired: {
+    border: "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#b91c1c",
+  },
+  warning: {
+    border: "1px solid #fde68a",
+    background: "#fffbeb",
+    color: "#b45309",
+  },
+  valid: {
+    border: "1px solid #a7f3d0",
+    background: "#ecfdf5",
+    color: "#047857",
+  },
+};
+
+export function parseAllegatoDeadlineDate(value) {
+  return parseDeadlineDate(value);
+}
+
+export function getAllegatoDeadlineStatus(value) {
+  const status = getDeadlineStatus(value);
+  if (status === "ind") return "empty";
+  return status;
 }
 
 function scadenzaToInputValue(value) {
   if (!value || String(value).trim() === "" || value === "—") return "";
   const s = String(value).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const date = parseScadenzaDate(s);
+  const date = parseDeadlineDate(value);
   if (!date) return "";
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -28,22 +63,15 @@ function scadenzaToInputValue(value) {
   return `${y}-${m}-${d}`;
 }
 
-function scadenzaStatusKind(value) {
-  if (!value || String(value).trim() === "" || value === "—") return "empty";
-  const date = parseScadenzaDate(value);
-  if (!date) return "empty";
-  const diff = (date.getTime() - Date.now()) / 86400000;
-  if (diff < 0) return "expired";
-  if (diff >= 0 && diff < 60) return "soon";
-  return "valid";
-}
+function renderAllegatoDeadlineCell(value, onChange, ariaLabel) {
+  const status = getAllegatoDeadlineStatus(value);
+  const tone = ALLEGATI_DATE_INPUT_TONE[status] || ALLEGATI_DATE_INPUT_TONE.empty;
 
-function ScadenzaDateInput({ value, onChange, ariaLabel }) {
-  const status = scadenzaStatusKind(value);
   return (
     <input
       type="date"
-      className={`allegati-date-input allegati-date-input-${status}`}
+      className="allegati-date-input"
+      style={{ ...ALLEGATI_DATE_INPUT_BASE, ...tone }}
       value={scadenzaToInputValue(value)}
       onChange={event => onChange(event.target.value)}
       aria-label={ariaLabel}
@@ -209,11 +237,11 @@ export function AllegatiTab({ imp, activeCantiere, activeImpresa, updateImpresa 
                             </span>
                           </td>
                           <td className="allegati-td allegati-td-center">
-                            <ScadenzaDateInput
-                              value={scadenza}
-                              ariaLabel={`Scadenza ${cfg.key}`}
-                              onChange={isoDate => handleScadenzaChange(cfg.key, isoDate)}
-                            />
+                            {renderAllegatoDeadlineCell(
+                              scadenza,
+                              isoDate => handleScadenzaChange(cfg.key, isoDate),
+                              `Scadenza ${cfg.key}`
+                            )}
                           </td>
                         </tr>
                       );
@@ -601,30 +629,9 @@ export function AllegatiTab({ imp, activeCantiere, activeImpresa, updateImpresa 
           transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .allegati-date-input:focus {
-          border-color: #2563eb;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-        }
-
-        .allegati-date-input-empty {
-          border-color: #cbd5e1;
-          background: #f8fafc;
-          color: #64748b;
-        }
-
-        .allegati-date-input-valid {
-          border-color: #a7f3d0;
-          background: #f0fdf4;
-        }
-
-        .allegati-date-input-soon {
-          border-color: #fed7aa;
-          background: #fff7ed;
-        }
-
-        .allegati-date-input-expired {
-          border-color: #fecaca;
-          background: #fef2f2;
+        .allegati-date-input:focus-visible {
+          outline: 2px solid #2563eb;
+          outline-offset: 2px;
         }
 
         @media (max-width: 720px) {
