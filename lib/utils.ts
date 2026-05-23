@@ -13,7 +13,7 @@ export function calcStatus(checks) {
 
 // Normalizzazione nome per deduplicazione
 export function normalizeName(name) {
-  return name
+  return String(name ?? "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")

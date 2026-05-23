@@ -440,7 +440,7 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
     .order("updated_at", { ascending: false })
     .limit(1);
 
-  if (checklistError) throw new Error(checklistError.message);
+  if (checklistError) throw new Error(checklistError.message || "Errore caricamento checklist");
   if (checklistRows?.[0]) {
     checks = normalizeChecks(checklistRows[0].checks);
     checkRefs = normalizeCheckRefs(checklistRows[0].check_refs);
@@ -454,7 +454,7 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
     .order("updated_at", { ascending: false })
     .limit(1);
 
-  if (allegatiError) throw new Error(allegatiError.message);
+  if (allegatiError) throw new Error(allegatiError.message || "Errore caricamento allegati");
   if (allegatiRows?.[0]) {
     allegati = normalizeJsonMap(allegatiRows[0].allegati);
     allegatiScadenze = normalizeJsonMap(allegatiRows[0].allegati_scadenze);
@@ -468,7 +468,7 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
     .eq("impresa_id", impresaId)
     .order("created_at", { ascending: true });
 
-  if (maestranzeError) throw new Error(maestranzeError.message);
+  if (maestranzeError) throw new Error(maestranzeError.message || "Errore caricamento maestranze");
   maestranze = (maestranzeRows ?? []).map(rowToMaestranzaApp);
 
   return { checks, checkRefs, note, allegati, allegatiScadenze, maestranze };
@@ -497,7 +497,9 @@ async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note
     .eq("impresa_id", impresaId)
     .limit(1);
 
-  if (selectError) throw new Error(selectError.message || error.message);
+  if (selectError) {
+    throw new Error(selectError.message || error.message || "Errore salvataggio checklist");
+  }
 
   if (existingRows?.length) {
     const { error: updateError } = await supabaseClient
@@ -509,7 +511,9 @@ async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note
         updated_at: updatedAt,
       })
       .eq("impresa_id", impresaId);
-    if (updateError) throw new Error(updateError.message);
+    if (updateError) {
+      throw new Error(updateError.message || "Errore aggiornamento checklist");
+    }
     return;
   }
 
@@ -520,7 +524,9 @@ async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note
     note: note ?? "",
     updated_at: updatedAt,
   });
-  if (insertError) throw new Error(insertError.message);
+  if (insertError) {
+    throw new Error(insertError.message || "Errore inserimento checklist");
+  }
 }
 
 async function upsertAllegatiWithClient(supabaseClient, impresaId, allegati, allegatiScadenze) {
@@ -614,7 +620,7 @@ export async function insertDocumentAnalysisServer(supabaseClient, userId, row) 
   };
 
   const { error } = await supabaseClient.from("document_analysis").insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(error.message || "Errore salvataggio analisi documento");
 }
 
 async function impresaWithChecklist(row) {

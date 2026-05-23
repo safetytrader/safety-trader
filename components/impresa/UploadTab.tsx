@@ -26,7 +26,7 @@ function isExtractedValueVisible(value) {
   if (value == null || value === undefined) return false;
   if (typeof value === "string") {
     const t = value.trim();
-    return t !== "" && t !== "—" && t.toLowerCase() !== "null";
+    return t !== "" && t !== "—" && String(t).toLowerCase() !== "null";
   }
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return !Number.isNaN(value);

@@ -1,3 +1,17 @@
+import { CHECKLIST_ITEMS } from "@/lib/constants";
+import { POS_CHECKLIST_EXCLUDED_IDS } from "@/lib/documentAnalysis";
+
+function buildChecklistPromptSection() {
+  const lines = CHECKLIST_ITEMS.map(
+    item => `- ${item.id}: ${item.label}`
+  );
+  const excluded = POS_CHECKLIST_EXCLUDED_IDS.join(", ");
+  return `Elenco voci checklist (usa SOLO questi checklist_id in checklist_evidence, non inventare id):
+${lines.join("\n")}
+
+Per documento POS: per le voci ${excluded} non inserire riferimenti pagina (found=false o ometti la voce).`;
+}
+
 const AI_SYSTEM_PROMPT = `Sei un assistente documentale per la sicurezza nei cantieri.
 Analizza il documento caricato.
 Devi restituire esclusivamente JSON valido secondo lo schema richiesto.
@@ -9,7 +23,18 @@ Estrai date in formato YYYY-MM-DD se possibile.
 Per documenti di formazione o idoneità estrai nominativo lavoratore, mansione/corso, data erogazione o scadenza.
 Restituisci confidence da 0 a 1.
 Non valutare giuridicamente il documento: limita l'output ai dati estraibili.
-Per ogni voce checklist che proponi di aggiornare a SI, indica anche la pagina del documento in cui hai trovato il riferimento. Se non puoi determinare la pagina, restituisci null. Non inventare riferimenti pagina.
+
+${buildChecklistPromptSection()}
+
+Per ogni voce checklist trovata nel documento (soprattutto POS), compila checklist_evidence con checklist_id, found, page ed excerpt.
+La pagina deve essere il numero di pagina del PDF dove compare il testo citato nell'excerpt.
+Per ogni voce checklist, indica il riferimento pagina solo se trovi una sezione o un testo specifico riferibile a quella voce.
+L'excerpt deve essere breve ma specifico (testo realmente presente nel documento).
+Se non trovi un riferimento specifico: found=false oppure page=null ed excerpt=null.
+Non usare una pagina generica per tutte le voci.
+Non inventare numeri pagina.
+Non compilare riferimenti senza excerpt.
+Lascia updates.checkRefs vuoto e references.checklist vuoto: usa checklist_evidence.
 
 Schema JSON obbligatorio:
 {
@@ -35,13 +60,16 @@ Schema JSON obbligatorio:
     "allegatiScadenze": {},
     "maestranze": []
   },
-  "references": {
-    "checklist": {
-      "id_voce_checklist": {
-        "page": null,
-        "excerpt": null
-      }
+  "checklist_evidence": [
+    {
+      "checklist_id": "a5",
+      "found": true,
+      "page": 5,
+      "excerpt": "Responsabile del Servizio di Prevenzione e Protezione: ..."
     }
+  ],
+  "references": {
+    "checklist": {}
   },
   "warnings": []
 }`;
@@ -55,7 +83,7 @@ export function mapOpenAiError(error: unknown, hasApiKey: boolean): string {
       : typeof error === "string"
         ? error
         : "";
-  const msg = raw.toLowerCase();
+  const msg = String(raw ?? "").toLowerCase();
 
   if (
     msg.includes("insufficient_quota") ||
@@ -154,8 +182,8 @@ export async function analyzeDocumentWithOpenAI({
   if (!response.ok) {
     const errObj = data.error as { message?: string; code?: string; type?: string } | undefined;
     const message = errObj?.message || "Errore OpenAI";
-    const code = (errObj?.code || errObj?.type || "").toLowerCase();
-    if (code.includes("insufficient_quota") || message.toLowerCase().includes("quota")) {
+    const code = String(errObj?.code || errObj?.type || "").toLowerCase();
+    if (code.includes("insufficient_quota") || String(message ?? "").toLowerCase().includes("quota")) {
       throw new Error("Quota OpenAI insufficiente o non disponibile.");
     }
     throw new Error(message);

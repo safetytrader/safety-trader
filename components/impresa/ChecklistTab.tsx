@@ -101,7 +101,9 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                       <div className="checklist-group-head">Lettera {l.toUpperCase()}</div>
                       {items.map(item => {
                         const current = imp.checks[item.id];
-                        const pageRef = imp.checkRefs?.[item.id] ?? "";
+                        const rawPageRef = imp.checkRefs?.[item.id];
+                        const pageRef =
+                          typeof rawPageRef === "string" ? rawPageRef : "";
                         const badge = rowStatusBadge(current);
                         return (
                           <div key={item.id} className="checklist-row">
@@ -149,8 +151,8 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                             <input
                               type="text"
                               className="checklist-page-ref"
-                              value={pageRef}
-                              placeholder="pag. 3"
+                              value={pageRef || ""}
+                              placeholder=""
                               aria-label={`Riferimento pagina per ${item.label}`}
                               onChange={e => {
                                 const value = e.target.value.trim();

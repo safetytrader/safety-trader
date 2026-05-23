@@ -100,6 +100,7 @@ export async function POST(request: Request) {
     const extractedForHistory = {
       ...(aiPayload.extracted_data || {}),
       references: aiPayload.references || {},
+      checklist_evidence: aiPayload.checklist_evidence || [],
     };
 
     await persistImpresaStateAfterAi(supabase, impresaId, {

@@ -12,6 +12,16 @@ export const ALLEGATI_KEY_MAP = {
 /** Checklist non aggiornata automaticamente da documento POS */
 export const POS_CHECKLIST_EXCLUDED_IDS = ["g2", "l1", "l2", "l3", "l4"];
 
+const CHECKLIST_ID_SET = new Set(CHECKLIST_ITEMS.map(item => item.id));
+
+const MIN_CHECKLIST_EXCERPT_LENGTH = 12;
+
+function safeLower(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .trim();
+}
+
 export const POS_CHECKLIST_MIN_CONFIDENCE = 0.65;
 
 export const POS_LOW_CONFIDENCE_WARNING =
@@ -52,12 +62,12 @@ export const AI_STATUS_LABELS = {
 };
 
 export function aiStatusLabel(stato) {
-  const key = (stato || "").toLowerCase();
+  const key = safeLower(stato);
   return AI_STATUS_LABELS[key] || AI_STATUS_LABELS[AI_STATUS.DA_ANALIZZARE];
 }
 
 export function normalizeAiStatus(stato) {
-  const key = (stato || "").toLowerCase();
+  const key = safeLower(stato);
   if (key === "pending" || key === "caricato" || !key) return AI_STATUS.DA_ANALIZZARE;
   if (key === "analisi_in_corso" || key === "in_corso") return AI_STATUS.IN_CORSO;
   if (key === "analizzato") return AI_STATUS.ANALIZZATO;
@@ -195,28 +205,165 @@ export function parseAiJsonResponse(text) {
   return normalizeAiPayload(parsed);
 }
 
+const GENERIC_EXCERPT_PATTERNS = [
+  /^piano\s+operativo/i,
+  /^pos\b/i,
+  /^sicurezza\b/i,
+  /^documento\b/i,
+  /^allegato\b/i,
+  /^sezione\b/i,
+  /^vedi\b/i,
+  /^pag\.\s*\d+\s*$/i,
+  /^n\.?\s*a\.?$/i,
+  /^non\s+specificato/i,
+  /^presente\b/i,
+  /^si\b$/i,
+  /^ok\b$/i,
+  /^conforme\b/i,
+  /^riferimento\b/i,
+];
+
+function parsePageNumber(page) {
+  if (page == null || page === "") return null;
+  const raw = String(page).trim().replace(/^pag\.?\s*/i, "");
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function isGenericExcerpt(excerpt) {
+  const t = String(excerpt ?? "").trim();
+  if (t.length < MIN_CHECKLIST_EXCERPT_LENGTH) return true;
+  const lower = safeLower(t);
+  return GENERIC_EXCERPT_PATTERNS.some(pattern => pattern.test(lower));
+}
+
+function isKnownChecklistId(id) {
+  return CHECKLIST_ID_SET.has(String(id ?? "").trim());
+}
+
+function isEvidenceFound(entry) {
+  if (entry?.found === false) return false;
+  if (entry?.found === true || entry?.found === "true") return true;
+  return false;
+}
+
+function normalizeEvidenceEntry(entry) {
+  const checklistId = String(entry?.checklist_id ?? entry?.id ?? "").trim();
+  if (!isKnownChecklistId(checklistId)) return null;
+  if (!isEvidenceFound(entry)) return null;
+
+  const excerpt = String(entry?.excerpt ?? "").trim();
+  const page = parsePageNumber(entry?.page);
+  if (!page || !excerpt || isGenericExcerpt(excerpt)) return null;
+
+  return {
+    key: checklistId,
+    page,
+    excerpt,
+    ref: { page, excerpt },
+  };
+}
+
+function filterTrustedPageReferences(validated = []) {
+  if (!validated.length) return {};
+
+  const byPage = new Map();
+  for (const item of validated) {
+    if (!byPage.has(item.page)) byPage.set(item.page, []);
+    byPage.get(item.page).push(item);
+  }
+
+  const trusted = [];
+  for (const items of byPage.values()) {
+    if (items.length >= 2) {
+      const uniqueExcerpts = new Set(items.map(item => safeLower(item.excerpt)));
+      const allGeneric = items.every(item => isGenericExcerpt(item.excerpt));
+      const allSame = uniqueExcerpts.size === 1;
+      if (allGeneric || allSame) continue;
+    }
+    trusted.push(...items);
+  }
+
+  const checkRefs = {};
+  for (const item of trusted) {
+    checkRefs[item.key] = item.formatted;
+  }
+  return checkRefs;
+}
+
+/** Da checklist_evidence AI → checkRefs applicabili. */
+export function buildCheckRefsFromEvidence(checklistEvidence = []) {
+  const validated = [];
+
+  for (const entry of checklistEvidence || []) {
+    const normalized = normalizeEvidenceEntry(entry);
+    if (!normalized) continue;
+    const formatted = formatCheckRef(normalized.ref);
+    if (!formatted) continue;
+    validated.push({ ...normalized, formatted });
+  }
+
+  return filterTrustedPageReferences(validated);
+}
+
+/** Riferimento attendibile solo con pagina valida ed excerpt specifico. */
+export function isTrustworthyChecklistReference(ref) {
+  if (ref == null) return false;
+  if (typeof ref === "string") return false;
+  if (typeof ref !== "object") return false;
+
+  const page = parsePageNumber(ref.page);
+  const excerpt = String(ref.excerpt ?? "").trim();
+  if (!page || !excerpt || isGenericExcerpt(excerpt)) return false;
+  return true;
+}
+
 export function formatCheckRef(ref) {
-  if (ref == null) return null;
-  if (typeof ref === "string") {
-    const t = ref.trim();
-    if (!t) return null;
-    if (/^pag\./i.test(t)) return t;
-    const num = t.replace(/^pag\.?\s*/i, "").trim();
-    return num ? `pag. ${num}` : null;
+  if (!isTrustworthyChecklistReference(ref)) return null;
+  const page = parsePageNumber(ref.page);
+  return page ? `pag. ${page}` : null;
+}
+
+function normalizeAppliedPageRef(value) {
+  const fromObject = formatCheckRef(value);
+  if (fromObject) return fromObject;
+  if (typeof value !== "string") return null;
+  const page = parsePageNumber(value);
+  return page ? `pag. ${page}` : null;
+}
+
+/**
+ * Costruisce checkRefs da references.checklist (legacy) con filtro excerpt.
+ */
+export function buildSanitizedCheckRefs(refMap = {}) {
+  const validated = [];
+
+  for (const [key, ref] of Object.entries(refMap || {})) {
+    if (key == null || key === "") continue;
+    if (!isKnownChecklistId(key) && key !== "durc" && key !== "visura") continue;
+    if (!isTrustworthyChecklistReference(ref)) continue;
+
+    const page = parsePageNumber(ref.page);
+    const excerpt = String(ref.excerpt ?? "").trim();
+    const formatted = formatCheckRef(ref);
+    if (!formatted) continue;
+
+    validated.push({
+      key: String(key),
+      page,
+      excerpt,
+      formatted,
+    });
   }
-  if (typeof ref === "object") {
-    const page = ref.page;
-    if (page == null || page === "") return null;
-    const pageStr = String(page).trim();
-    if (!pageStr) return null;
-    return /^pag\./i.test(pageStr) ? pageStr : `pag. ${pageStr}`;
-  }
-  return null;
+
+  return filterTrustedPageReferences(validated);
 }
 
 function normalizeAiPayload(raw) {
+  const documentType = raw?.document_type;
   return {
-    document_type: raw?.document_type || "ALTRO",
+    document_type:
+      documentType == null || documentType === "" ? "ALTRO" : String(documentType),
     confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
     summary: raw?.summary || "",
     extracted_data: {
@@ -233,41 +380,26 @@ function normalizeAiPayload(raw) {
     },
     updates: {
       checklist: raw?.updates?.checklist || {},
-      checkRefs: raw?.updates?.checkRefs || raw?.checkRefs || {},
+      checkRefs: {},
       allegati: raw?.updates?.allegati || {},
       allegatiScadenze: raw?.updates?.allegatiScadenze || {},
       maestranze: Array.isArray(raw?.updates?.maestranze) ? raw.updates.maestranze : [],
     },
     references: raw?.references || { checklist: {} },
+    checklist_evidence: Array.isArray(raw?.checklist_evidence) ? raw.checklist_evidence : [],
     warnings: Array.isArray(raw?.warnings) ? raw.warnings : [],
   };
 }
 
-function enrichCheckRefsFromReferences(updates, references = {}, explicitCheckRefs = {}) {
-  const checkRefs = { ...(updates.checkRefs || {}), ...explicitCheckRefs };
-  const refMap = references?.checklist || {};
-
-  for (const [key, val] of Object.entries(updates.checklist || {})) {
-    if (val !== "si") continue;
-    if (!isFieldEmpty(checkRefs[key])) continue;
-    const formatted = formatCheckRef(refMap[key]) || formatCheckRef(explicitCheckRefs[key]);
-    if (formatted) checkRefs[key] = formatted;
-  }
-
-  for (const [key, refVal] of Object.entries(refMap)) {
-    if (!isFieldEmpty(checkRefs[key])) continue;
-    const formatted = formatCheckRef(refVal);
-    if (formatted && updates.checklist?.[key] === "si") {
-      checkRefs[key] = formatted;
-    }
-  }
-
-  for (const [key, refVal] of Object.entries(explicitCheckRefs)) {
-    if (!isFieldEmpty(checkRefs[key])) continue;
-    const formatted = formatCheckRef(refVal);
-    if (formatted) checkRefs[key] = formatted;
-  }
-
+function enrichCheckRefsFromReferences(
+  updates,
+  references = {},
+  _documentType = "",
+  checklistEvidence = []
+) {
+  const fromLegacy = buildSanitizedCheckRefs(references?.checklist || {});
+  const fromEvidence = buildCheckRefsFromEvidence(checklistEvidence);
+  const checkRefs = { ...fromLegacy, ...fromEvidence };
   return { ...updates, checkRefs };
 }
 
@@ -284,7 +416,7 @@ function workerFromExtracted(extracted, fields = {}) {
  * Mapping deterministico da tipo documento + extracted_data → updates
  */
 export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
-  const type = (documentType || "ALTRO").toUpperCase();
+  const type = safeLower(documentType || "ALTRO").toUpperCase();
   const updates = {
     checklist: {},
     checkRefs: {},
@@ -390,7 +522,7 @@ export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
 
   return {
     checklist: { ...mappedUpdates.checklist, ...aiUpdates.checklist },
-    checkRefs: { ...mappedUpdates.checkRefs, ...aiUpdates.checkRefs },
+    checkRefs: { ...(mappedUpdates.checkRefs || {}) },
     allegati: { ...mappedUpdates.allegati, ...aiUpdates.allegati },
     allegatiScadenze: { ...mappedUpdates.allegatiScadenze, ...aiUpdates.allegatiScadenze },
     maestranze: deduplicateWorkers([], maestranze),
@@ -407,17 +539,19 @@ export function buildFinalUpdates(aiPayload) {
   const updates = enrichCheckRefsFromReferences(
     merged,
     aiPayload.references || {},
-    merged.checkRefs || {}
+    aiPayload.document_type,
+    aiPayload.checklist_evidence || []
   );
   return {
     updates,
     mappingWarnings,
     references: aiPayload.references || {},
+    checklist_evidence: aiPayload.checklist_evidence || [],
   };
 }
 
 export function detectDocumentType(fileName = "") {
-  const n = fileName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const n = safeLower(fileName).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (n.includes("durc")) return "DURC";
   if (n.includes("visura") || n.includes("cciaa") || n.includes("camera")) return "VISURA";
   if (n.includes("pos") || n.includes("piano operativo")) return "POS";
@@ -446,14 +580,17 @@ function addDays(days) {
 }
 
 function resolveAllegatoKey(key) {
-  if (!key) return null;
-  if (ALLEGATI_KEY_MAP[key]) return ALLEGATI_KEY_MAP[key];
-  const found = ALLEGATI_CONFIG.find(a => a.key === key);
+  if (key == null || key === "") return null;
+  const keyStr = String(key);
+  if (ALLEGATI_KEY_MAP[keyStr]) return ALLEGATI_KEY_MAP[keyStr];
+  const found = ALLEGATI_CONFIG.find(a => a.key === keyStr);
   if (found) return found.key;
-  const lower = key.toLowerCase();
-  const byAlias = ALLEGATI_CONFIG.find(
-    a => a.key.toLowerCase() === lower || a.sinonimi?.toLowerCase().includes(lower)
-  );
+  const lower = safeLower(keyStr);
+  const byAlias = ALLEGATI_CONFIG.find(a => {
+    const allegatoKey = a?.key != null ? safeLower(a.key) : "";
+    const sinonimi = a?.sinonimi != null ? safeLower(a.sinonimi) : "";
+    return allegatoKey === lower || (sinonimi !== "" && sinonimi.includes(lower));
+  });
   return byAlias?.key || null;
 }
 
@@ -595,7 +732,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
   }
 
   for (const [key, value] of Object.entries(updates.checkRefs || {})) {
-    const formatted = formatCheckRef(value);
+    const formatted = normalizeAppliedPageRef(value);
     if (!formatted) continue;
     if (isFieldEmpty(checkRefs[key])) {
       checkRefs[key] = formatted;
