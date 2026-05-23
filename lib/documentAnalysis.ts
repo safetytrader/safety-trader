@@ -590,6 +590,39 @@ const PREPOSTO_CLASSIFICATION_RE =
 const ANTINCENDIO_CLASSIFICATION_RE =
   /antincendio|addett[oa]?\s+(alla\s+)?antincendio|prevenzione\s+incendi|lotta\s+antincendio|gestione\s+(delle\s+)?emergenze|emergenze\s+antincendio|rischio\s+(basso|medio|elevato|alto)(\s+antincendio|\s+incendi)?|livello\s+[123](\s+antincendio|\s+incendi)?/;
 
+const NOMINA_DESIGNATION_RE =
+  /\b(nomina|designazione|incarico|incaricat[oa]|designat[oa]|conferimento\s+incarico|per\s+accettazione|firma\s+per\s+accettazione|lavoratore\s+incaricat[oa]|addett[oa]\s+designat[oa])\b/;
+
+const TRAINING_ATTESTATION_RE =
+  /attestato\s+(di\s+)?(frequenza|formazione|aggiornamento)|attestato\s+corso|corso\s+di\s+(formazione|aggiornamento)|programma\s+didattico|verifica\s+finale|soggetto\s+formatore|partecipazione\s+al\s+corso|svolgimento\s+del\s+corso|esito\s+(positivo\s+)?del\s+corso|frequenza\s+al\s+corso|\bdurata\b.*\bore\b|\b\d{1,3}\s*ore\b/;
+
+export const NOMINA_ANALYSIS_UI = {
+  title: "Documento riconosciuto come nomina/designazione",
+  body: "Il documento non è un attestato formativo e non aggiorna le scadenze della maestranza.",
+  appliedSummary: "Nessun aggiornamento applicato alle scadenze formative.",
+};
+
+export const NOMINA_ANALYSIS_WARNINGS = [
+  "Documento di nomina/designazione: non è un attestato formativo.",
+  "Per aggiornare la scadenza è necessario caricare l'attestato di formazione o aggiornamento.",
+];
+
+export function isNominaDocumentType(documentType) {
+  return String(documentType || "")
+    .toUpperCase()
+    .startsWith("NOMINA_");
+}
+
+export function buildNominaSkippedChanges(documentType) {
+  return {
+    document: {
+      reason: "documento di nomina/designazione, non attestato formativo",
+      document_type: documentType,
+      proposed: "nessun aggiornamento scadenze formative",
+    },
+  };
+}
+
 function classificationBlob(payload = {}, fileName = "") {
   const extracted = payload.extracted_data || payload;
   return [
@@ -598,9 +631,40 @@ function classificationBlob(payload = {}, fileName = "") {
     payload.summary,
     extracted.tipo_formazione,
     extracted.rischio,
+    extracted.soggetto_formatore,
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function hasTrainingAttestationSignals(text, extracted = {}) {
+  if (TRAINING_ATTESTATION_RE.test(text)) return true;
+  if (extracted.durata_ore != null && String(extracted.durata_ore).trim() !== "") {
+    return true;
+  }
+  if (extracted.soggetto_formatore) return true;
+  if (extracted.data_inizio && extracted.data_fine) return true;
+  const corso = safeLower(extracted.corso || "");
+  if (/attestato|corso\s+di|formazione\s+per\s+addett/.test(corso)) return true;
+  return false;
+}
+
+function hasNominaDesignationSignals(text) {
+  return NOMINA_DESIGNATION_RE.test(text);
+}
+
+function resolveNominaSubtype(text) {
+  if (/primo\s+soccorso|pronto\s+soccorso|\bps\b/.test(text)) {
+    return "NOMINA_PRIMO_SOCCORSO";
+  }
+  if (/antincendio|prevenzione\s+incendi|addett[oa]?\s+antincendio/.test(text)) {
+    return "NOMINA_ANTINCENDIO";
+  }
+  if (/preposto/.test(text)) return "NOMINA_PREPOSTO";
+  if (/\brls\b|rappresentante\s+(dei\s+)?lavoratori/.test(text)) return "NOMINA_RLS";
+  if (/\baspp\b/.test(text)) return "NOMINA_ASPP";
+  if (/\brspp\b/.test(text)) return "NOMINA_RSPP";
+  return "NOMINA_GENERICA_SICUREZZA";
 }
 
 export function resolveAntincendioExpiryIso(extracted = {}) {
@@ -616,13 +680,25 @@ export function resolveAntincendioExpiryIso(extracted = {}) {
 }
 
 export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
+  const extracted = payload.extracted_data || {};
   const text = safeLower(
     classificationBlob(payload, fileName)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
   );
+
+  const isNomina = hasNominaDesignationSignals(text);
+  const isTraining = hasTrainingAttestationSignals(text, extracted);
+
+  if (isNomina && !isTraining) {
+    const aiType = String(payload.document_type || "").toUpperCase();
+    if (aiType.startsWith("NOMINA_")) return aiType;
+    return resolveNominaSubtype(text);
+  }
+
   if (PREPOSTO_CLASSIFICATION_RE.test(text)) return "PREPOSTO";
   if (ANTINCENDIO_CLASSIFICATION_RE.test(text)) return "ANTINCENDIO";
+
   const type = payload.document_type;
   return type == null || type === "" ? "ALTRO" : String(type);
 }
@@ -775,6 +851,11 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
   const scadenzaApp = scadenzaIso ? toAppDateFromIso(scadenzaIso) : null;
   const confidence = typeof meta.confidence === "number" ? meta.confidence : 0;
 
+  if (type.startsWith("NOMINA_")) {
+    mappingWarnings.push(...NOMINA_ANALYSIS_WARNINGS);
+    return { updates, mappingWarnings };
+  }
+
   switch (type) {
     case "DURC":
       updates.checklist.durc = "si";
@@ -907,6 +988,29 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
   const documentType = resolveDocumentTypeWithPriority(aiPayload, meta.fileName || "");
   const mappingWarnings = [];
   const originalUpper = String(originalType || "").toUpperCase();
+
+  if (isNominaDocumentType(documentType)) {
+    if (originalUpper && !originalUpper.startsWith("NOMINA_")) {
+      mappingWarnings.push(
+        `Documento riclassificato come ${documentType} (nomina/designazione, non attestato formativo).`
+      );
+    }
+    mappingWarnings.push(...NOMINA_ANALYSIS_WARNINGS);
+    return {
+      updates: {
+        checklist: {},
+        allegati: {},
+        allegatiScadenze: {},
+        maestranze: [],
+        checkRefs: {},
+      },
+      mappingWarnings,
+      isNomina: true,
+      documentType,
+      analysisUi: NOMINA_ANALYSIS_UI,
+    };
+  }
+
   if (documentType === "PREPOSTO" && originalUpper && originalUpper !== "PREPOSTO") {
     mappingWarnings.push(
       "Documento riclassificato come PREPOSTO (priorità su formazione lavoratori)."
@@ -938,6 +1042,9 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
       checkRefs: {},
     },
     mappingWarnings,
+    isNomina: false,
+    documentType,
+    analysisUi: null,
   };
 }
 
@@ -969,6 +1076,18 @@ export function detectDocumentType(fileName = "") {
   if (n.includes("pos") || n.includes("piano operativo")) return "POS";
   if (n.includes("unilav")) return "UNILAV";
   if (n.includes("idoneit")) return "IDONEITA";
+  if (
+    (n.includes("nomina") || n.includes("designazione") || n.includes("incarico")) &&
+    !/attestato|corso di|programma didattico|\bore\b/.test(n)
+  ) {
+    if (/primo soccorso|pronto soccorso/.test(n)) return "NOMINA_PRIMO_SOCCORSO";
+    if (/antincendio|prevenzione incendi/.test(n)) return "NOMINA_ANTINCENDIO";
+    if (/preposto/.test(n)) return "NOMINA_PREPOSTO";
+    if (/\brls\b/.test(n)) return "NOMINA_RLS";
+    if (/\brspp\b/.test(n)) return "NOMINA_RSPP";
+    if (/\baspp\b/.test(n)) return "NOMINA_ASPP";
+    return "NOMINA_GENERICA_SICUREZZA";
+  }
   if (
     n.includes("preposto") ||
     n.includes("organizzazione di cantiere per preposti")
@@ -1398,7 +1517,10 @@ export function applyAiUpdates(current = {}, updates = {}) {
   };
 }
 
-export function formatAppliedSummary(applied_changes = {}) {
+export function formatAppliedSummary(applied_changes = {}, options = {}) {
+  if (options.isNomina) {
+    return [NOMINA_ANALYSIS_UI.appliedSummary];
+  }
   const lines = [];
   for (const [k, v] of Object.entries(applied_changes.checklist || {})) {
     lines.push(`Checklist: ${k} → ${v}`);
@@ -1419,7 +1541,12 @@ export function formatAppliedSummary(applied_changes = {}) {
   return lines;
 }
 
-export function formatSkippedSummary(skipped_changes = {}) {
+export function formatSkippedSummary(skipped_changes = {}, options = {}) {
+  if (options.isNomina && skipped_changes.document) {
+    return [
+      `Documento: ${skipped_changes.document.reason || "nomina/designazione"}`,
+    ];
+  }
   const lines = [];
   for (const [k, v] of Object.entries(skipped_changes.checklist || {})) {
     lines.push(`Checklist ${k}: già "${v.existing}"`);

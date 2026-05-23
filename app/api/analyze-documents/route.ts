@@ -2,6 +2,8 @@ import {
   appendImpresaMismatchWarning,
   applyAiUpdates,
   buildFastFinalUpdates,
+  buildNominaSkippedChanges,
+  isNominaDocumentType,
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
@@ -125,9 +127,13 @@ export async function POST(request: Request) {
     console.log("mode-used", analysisMode);
 
     const aiPayload = parseAiJsonResponse(rawAiResponse);
-    const { updates, mappingWarnings } = buildFastFinalUpdates(aiPayload, { fileName });
+    const built = buildFastFinalUpdates(aiPayload, { fileName });
+    const documentType =
+      built.documentType ||
+      resolveDocumentTypeWithPriority(aiPayload, fileName) ||
+      aiPayload.document_type;
     const warnings = appendImpresaMismatchWarning(
-      [...(aiPayload.warnings || []), ...(mappingWarnings || [])],
+      [...(aiPayload.warnings || []), ...(built.mappingWarnings || [])],
       aiPayload.extracted_data?.impresa,
       impresaNome
     );
@@ -135,16 +141,26 @@ export async function POST(request: Request) {
     const current = await loadImpresaStateForAi(supabase, impresaId);
     const preservedCheckRefs = current.checkRefs || {};
 
-    const applied = applyAiUpdates(
-      {
-        checks: current.checks,
-        checkRefs: preservedCheckRefs,
-        allegati: current.allegati,
-        allegatiScadenze: current.allegatiScadenze,
-        maestranze: current.maestranze,
-      },
-      updates
-    );
+    const applied = built.isNomina
+      ? {
+          checks: current.checks,
+          checkRefs: preservedCheckRefs,
+          allegati: current.allegati,
+          allegatiScadenze: current.allegatiScadenze,
+          maestranze: current.maestranze,
+          applied_changes: {},
+          skipped_changes: buildNominaSkippedChanges(documentType),
+        }
+      : applyAiUpdates(
+          {
+            checks: current.checks,
+            checkRefs: preservedCheckRefs,
+            allegati: current.allegati,
+            allegatiScadenze: current.allegatiScadenze,
+            maestranze: current.maestranze,
+          },
+          built.updates
+        );
 
     console.time("db-update");
     await persistImpresaStateAfterAi(supabase, impresaId, {
@@ -160,8 +176,7 @@ export async function POST(request: Request) {
       impresa_id: impresaId,
       cantiere_id: cantiereId,
       status: "completed",
-      document_type:
-        resolveDocumentTypeWithPriority(aiPayload, fileName) || aiPayload.document_type,
+      document_type: documentType,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
       extracted_data: {
@@ -176,14 +191,15 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: true,
-      document_type:
-        resolveDocumentTypeWithPriority(aiPayload, fileName) || aiPayload.document_type,
+      document_type: documentType,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
       extracted_data: aiPayload.extracted_data,
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,
       warnings,
+      analysis_ui: built.analysisUi || null,
+      is_nomina: Boolean(built.isNomina),
       state: {
         checks: applied.checks,
         checkRefs: preservedCheckRefs,

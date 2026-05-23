@@ -135,9 +135,15 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         document_type: data.document_type,
         summary: data.summary,
         extracted_data: data.extracted_data,
-        applied_lines: formatAppliedSummary(data.applied_changes),
-        skipped_lines: formatSkippedSummary(data.skipped_changes),
+        applied_lines: formatAppliedSummary(data.applied_changes, {
+          isNomina: data.is_nomina,
+        }),
+        skipped_lines: formatSkippedSummary(data.skipped_changes, {
+          isNomina: data.is_nomina,
+        }),
         warnings: data.warnings || [],
+        analysis_ui: data.analysis_ui || null,
+        is_nomina: Boolean(data.is_nomina),
       });
     } catch (err) {
       const message = err?.message || "Analisi AI non disponibile. Riprova tra poco.";
@@ -304,6 +310,17 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                   <strong>Tipo documento riconosciuto:</strong>{" "}
                   {resultModal.document_type || "—"}
                 </p>
+                {resultModal.analysis_ui ? (
+                  <div className="upload-ai-modal-nomina">
+                    <p>
+                      <strong>{resultModal.analysis_ui.title}</strong>
+                    </p>
+                    <p className="upload-ai-modal-muted">{resultModal.analysis_ui.body}</p>
+                    <p className="upload-ai-modal-section">
+                      {resultModal.analysis_ui.appliedSummary}
+                    </p>
+                  </div>
+                ) : null}
                 {resultModal.summary ? (
                   <p className="upload-ai-modal-muted">{resultModal.summary}</p>
                 ) : null}
@@ -319,7 +336,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                     </ul>
                   </div>
                 ) : null}
-                {resultModal.applied_lines?.length > 0 ? (
+                {!resultModal.is_nomina && resultModal.applied_lines?.length > 0 ? (
                   <div>
                     <p className="upload-ai-modal-section">Aggiornamenti applicati</p>
                     <ul className="upload-ai-modal-list">
@@ -329,7 +346,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                     </ul>
                   </div>
                 ) : null}
-                {resultModal.skipped_lines?.length > 0 ? (
+                {!resultModal.is_nomina && resultModal.skipped_lines?.length > 0 ? (
                   <div>
                     <p className="upload-ai-modal-section">
                       Dati non aggiornati (già presenti)

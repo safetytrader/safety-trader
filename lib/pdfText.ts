@@ -91,7 +91,32 @@ export function buildDocumentHints(fileName = "", text = "") {
   if (/idoneit|giudizio\s+di\s+idoneita|idoneita\s+sanitaria/.test(sample)) {
     hints.push("IDONEITA");
   }
-  if (
+  const isTrainingAttest =
+    /attestato|corso\s+di|programma\s+didattico|verifica\s+finale|soggetto\s+formatore|\b\d{1,3}\s*ore\b/.test(
+      sample
+    );
+  const isNomina =
+    /nomina|designazione|incarico|incaricat[oa]|designat[oa]|conferimento\s+incarico|per\s+accettazione/.test(
+      sample
+    );
+
+  if (isNomina && !isTrainingAttest) {
+    if (/primo\s+soccorso|pronto\s+soccorso|\bps\b/.test(sample)) {
+      hints.push("NOMINA_PRIMO_SOCCORSO");
+    } else if (/antincendio|prevenzione\s+incendi/.test(sample)) {
+      hints.push("NOMINA_ANTINCENDIO");
+    } else if (/preposto/.test(sample)) {
+      hints.push("NOMINA_PREPOSTO");
+    } else if (/\brls\b/.test(sample)) {
+      hints.push("NOMINA_RLS");
+    } else if (/\brspp\b/.test(sample)) {
+      hints.push("NOMINA_RSPP");
+    } else if (/\baspp\b/.test(sample)) {
+      hints.push("NOMINA_ASPP");
+    } else {
+      hints.push("NOMINA_GENERICA_SICUREZZA");
+    }
+  } else if (
     /preposto|preposti|organizzazione\s+(di\s+)?cantiere\s+(per\s+)?preposti|formazione\s+preposto|aggiornamento\s+preposto/.test(
       sample
     )

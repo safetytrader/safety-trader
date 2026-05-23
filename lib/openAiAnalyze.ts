@@ -8,7 +8,7 @@ summary massimo 200 caratteri.
 warnings massimo 5 elementi.
 Nessun riferimento pagina, excerpt, checklist_evidence o updates.
 
-document_type: DURC | POS | VISURA | FORMAZIONE_BASE | FORMAZIONE_SPECIFICA | FORMAZIONE_BASE_SPECIFICA | IDONEITA | UNILAV | PREPOSTO | ANTINCENDIO | PRIMO_SOCCORSO | PONTEGGI | MMT | PLE | GRU | SPAZI_CONFINATI | ALTRO
+document_type: DURC | POS | VISURA | FORMAZIONE_BASE | FORMAZIONE_SPECIFICA | FORMAZIONE_BASE_SPECIFICA | IDONEITA | UNILAV | PREPOSTO | ANTINCENDIO | PRIMO_SOCCORSO | PONTEGGI | MMT | PLE | GRU | SPAZI_CONFINATI | NOMINA_PRIMO_SOCCORSO | NOMINA_ANTINCENDIO | NOMINA_PREPOSTO | NOMINA_RLS | NOMINA_RSPP | NOMINA_ASPP | NOMINA_GENERICA_SICUREZZA | ALTRO
 
 Estrai solo campi pertinenti al tipo:
 - DURC: impresa, codice_fiscale_impresa, data_emissione, data_scadenza, ente
@@ -20,11 +20,20 @@ Estrai solo campi pertinenti al tipo:
 - ANTINCENDIO (priorità su formazione lavoratori): lavoratore, codice_fiscale_lavoratore, corso, data_erogazione, data_inizio, data_fine, data_scadenza se espressa, durata_ore, rischio/livello (basso/medio/alto/elevato)
 - FORMAZIONE_* (solo attestati lavoratori, NON preposto/antincendio): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
 
-Classificazione PREPOSTO (ha priorità su FORMAZIONE_*):
-Se titolo/corso contiene preposto, preposti, formazione preposto, aggiornamento preposto, organizzazione di cantiere per preposti → document_type PREPOSTO (NON formazione base/specifica lavoratori).
+Classificazione NOMINA/DESIGNAZIONE (priorità massima su attestati formativi):
+Se il documento è lettera di nomina/designazione/incarico SENZA attestato di frequenza/formazione/aggiornamento (senza durata ore, programma didattico, verifica finale, soggetto formatore, attestato di corso):
+- designazione/nomina addetto primo soccorso → NOMINA_PRIMO_SOCCORSO (NON PRIMO_SOCCORSO)
+- nomina/designazione addetto antincendio → NOMINA_ANTINCENDIO (NON ANTINCENDIO)
+- nomina/designazione preposto → NOMINA_PREPOSTO (NON PREPOSTO)
+- nomina RLS → NOMINA_RLS; nomina RSPP → NOMINA_RSPP; nomina ASPP → NOMINA_ASPP
+- altra nomina sicurezza → NOMINA_GENERICA_SICUREZZA
+Una nomina/designazione NON aggiorna scadenze formative.
 
-Classificazione ANTINCENDIO (ha priorità su FORMAZIONE_*):
-Se titolo/corso contiene antincendio, addetto antincendio, prevenzione incendi, lotta antincendio, gestione delle emergenze, rischio basso/medio/elevato per incendi, livello 1/2/3 antincendio → document_type ANTINCENDIO (NON formazione base/specifica lavoratori).
+Classificazione PREPOSTO (solo attestato formativo):
+Se attestato/corso di formazione preposto (frequenza, durata ore, aggiornamento) → document_type PREPOSTO (NON nomina).
+
+Classificazione ANTINCENDIO (solo attestato formativo):
+Se attestato/corso antincendio con elementi di formazione (frequenza, durata ore, livello, programma) → ANTINCENDIO (NON nomina/designazione).
 
 Classificazione formazione lavoratori:
 - FORMAZIONE_BASE: solo formazione generale/modulo generale/corso generale lavoratori, tipicamente 4 ore, SENZA formazione specifica o rischio specifico nel titolo.
