@@ -587,11 +587,32 @@ export function resolveWorkerCourseFieldValue(extracted = {}, courseKey) {
 const PREPOSTO_CLASSIFICATION_RE =
   /preposto|preposti|organizzazione\s+(di\s+)?cantiere\s+(per\s+)?preposti|formazione\s+preposto|aggiornamento\s+preposto/;
 
+const ANTINCENDIO_CLASSIFICATION_RE =
+  /antincendio|addett[oa]?\s+(alla\s+)?antincendio|prevenzione\s+incendi|lotta\s+antincendio|gestione\s+(delle\s+)?emergenze|emergenze\s+antincendio|rischio\s+(basso|medio|elevato|alto)(\s+antincendio|\s+incendi)?|livello\s+[123](\s+antincendio|\s+incendi)?/;
+
 function classificationBlob(payload = {}, fileName = "") {
   const extracted = payload.extracted_data || payload;
-  return [fileName, extracted.corso, payload.summary, extracted.tipo_formazione]
+  return [
+    fileName,
+    extracted.corso,
+    payload.summary,
+    extracted.tipo_formazione,
+    extracted.rischio,
+  ]
     .filter(Boolean)
     .join(" ");
+}
+
+export function resolveAntincendioExpiryIso(extracted = {}) {
+  const explicit = normalizeDate(extracted.data_scadenza);
+  if (explicit) return explicit;
+  const fine = normalizeDate(extracted.data_fine);
+  if (fine) return addYearsIsoDate(fine, 5);
+  const erogazione = normalizeDate(
+    extracted.data_erogazione || extracted.data_emissione
+  );
+  if (erogazione) return addYearsIsoDate(erogazione, 5);
+  return null;
 }
 
 export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
@@ -601,6 +622,7 @@ export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
       .replace(/[\u0300-\u036f]/g, "")
   );
   if (PREPOSTO_CLASSIFICATION_RE.test(text)) return "PREPOSTO";
+  if (ANTINCENDIO_CLASSIFICATION_RE.test(text)) return "ANTINCENDIO";
   const type = payload.document_type;
   return type == null || type === "" ? "ALTRO" : String(type);
 }
@@ -816,7 +838,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "ANTINCENDIO": {
-      const antincendio = resolveWorkerCourseFieldValue(extracted, "antincendio");
+      const antincendio = resolveAntincendioExpiryIso(extracted);
       const w = workerFromExtracted(extracted, antincendio ? { antincendio } : {});
       if (w) updates.maestranze.push(w);
       break;
@@ -884,13 +906,19 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
   const originalType = aiPayload.document_type;
   const documentType = resolveDocumentTypeWithPriority(aiPayload, meta.fileName || "");
   const mappingWarnings = [];
-  if (
-    documentType === "PREPOSTO" &&
-    originalType &&
-    String(originalType).toUpperCase() !== "PREPOSTO"
-  ) {
+  const originalUpper = String(originalType || "").toUpperCase();
+  if (documentType === "PREPOSTO" && originalUpper && originalUpper !== "PREPOSTO") {
     mappingWarnings.push(
       "Documento riclassificato come PREPOSTO (priorità su formazione lavoratori)."
+    );
+  }
+  if (
+    documentType === "ANTINCENDIO" &&
+    originalUpper &&
+    originalUpper !== "ANTINCENDIO"
+  ) {
+    mappingWarnings.push(
+      "Documento riclassificato come ANTINCENDIO (priorità su formazione lavoratori)."
     );
   }
 
@@ -948,6 +976,13 @@ export function detectDocumentType(fileName = "") {
     return "PREPOSTO";
   }
   if (
+    n.includes("antincendio") ||
+    n.includes("prevenzione incendi") ||
+    n.includes("lotta antincendio")
+  ) {
+    return "ANTINCENDIO";
+  }
+  if (
     n.includes("16 ore") ||
     n.includes("12 ore") ||
     n.includes("8 ore") ||
@@ -961,7 +996,6 @@ export function detectDocumentType(fileName = "") {
     return "FORMAZIONE_SPECIFICA";
   }
   if (n.includes("formazione") || n.includes("81-08") || n.includes("8108")) return "FORMAZIONE_BASE";
-  if (n.includes("antincendio")) return "ANTINCENDIO";
   if (n.includes("soccorso") || n.includes("primo soccorso") || /\bps\b/.test(n)) return "PRIMO_SOCCORSO";
   if (n.includes("pontegg")) return "PONTEGGI";
   if (n.includes("mmt") || n.includes("mdt")) return "MMT";

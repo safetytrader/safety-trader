@@ -98,7 +98,13 @@ export function buildDocumentHints(fileName = "", text = "") {
   ) {
     hints.push("PREPOSTO");
   } else if (
-    /rischio\s+(alto|medio|basso)|lavoratori.*\b(8|12|16)\s*ore|formazione\s+lavoratori\s+complet|modulo\s+generale.*modulo\s+specifico|generale\s+e\s+specifica/.test(
+    /antincendio|prevenzione\s+incendi|lotta\s+antincendio|addett[oa]?\s+(alla\s+)?antincendio|gestione\s+(delle\s+)?emergenze/.test(
+      sample
+    )
+  ) {
+    hints.push("ANTINCENDIO");
+  } else if (
+    /rischio\s+(alto|medio|basso|elevato)|lavoratori.*\b(8|12|16)\s*ore|formazione\s+lavoratori\s+complet|modulo\s+generale.*modulo\s+specifico|generale\s+e\s+specifica/.test(
       sample
     )
   ) {
@@ -109,9 +115,6 @@ export function buildDocumentHints(fileName = "", text = "") {
     hints.push("FORMAZIONE_BASE");
   } else if (/formazione|attestato|corso/.test(sample)) {
     hints.push("FORMAZIONE_BASE");
-  }
-  if (/antincendio/.test(sample)) {
-    hints.push("ANTINCENDIO");
   }
   if (/primo\s+soccorso|pronto\s+soccorso/.test(sample)) {
     hints.push("PRIMO_SOCCORSO");
