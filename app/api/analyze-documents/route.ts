@@ -3,6 +3,7 @@ import {
   applyAiUpdates,
   buildFastFinalUpdates,
   parseAiJsonResponse,
+  resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
 import {
   insertDocumentAnalysisServer,
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
     console.log("mode-used", analysisMode);
 
     const aiPayload = parseAiJsonResponse(rawAiResponse);
-    const { updates, mappingWarnings } = buildFastFinalUpdates(aiPayload);
+    const { updates, mappingWarnings } = buildFastFinalUpdates(aiPayload, { fileName });
     const warnings = appendImpresaMismatchWarning(
       [...(aiPayload.warnings || []), ...(mappingWarnings || [])],
       aiPayload.extracted_data?.impresa,
@@ -159,7 +160,8 @@ export async function POST(request: Request) {
       impresa_id: impresaId,
       cantiere_id: cantiereId,
       status: "completed",
-      document_type: aiPayload.document_type,
+      document_type:
+        resolveDocumentTypeWithPriority(aiPayload, fileName) || aiPayload.document_type,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
       extracted_data: {
@@ -174,7 +176,8 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: true,
-      document_type: aiPayload.document_type,
+      document_type:
+        resolveDocumentTypeWithPriority(aiPayload, fileName) || aiPayload.document_type,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
       extracted_data: aiPayload.extracted_data,

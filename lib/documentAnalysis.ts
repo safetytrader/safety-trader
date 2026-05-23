@@ -563,9 +563,10 @@ function formationYearsForKey(courseKey) {
   return FORMATION_SCADENZA[key];
 }
 
+/** Scadenza attestato abilitazione (YYYY-MM-DD): data_scadenza, altrimenti fine/erogazione + anni regola. */
 export function resolveWorkerCourseFieldValue(extracted = {}, courseKey) {
   const explicit = normalizeDate(extracted.data_scadenza);
-  if (explicit) return toAppDateFromIso(explicit);
+  if (explicit) return explicit;
 
   const yearsRule = formationYearsForKey(courseKey);
   const base = normalizeDate(
@@ -574,13 +575,34 @@ export function resolveWorkerCourseFieldValue(extracted = {}, courseKey) {
   if (!base) return null;
 
   if (typeof yearsRule === "number") {
-    return toAppDateFromIso(addYearsIsoDate(base, yearsRule));
+    return addYearsIsoDate(base, yearsRule);
   }
   if (typeof yearsRule === "function") {
-    return toAppDateFromIso(addYearsIsoDate(base, yearsRule("A")));
+    return addYearsIsoDate(base, yearsRule("A"));
   }
 
-  return toAppDateFromIso(base);
+  return base;
+}
+
+const PREPOSTO_CLASSIFICATION_RE =
+  /preposto|preposti|organizzazione\s+(di\s+)?cantiere\s+(per\s+)?preposti|formazione\s+preposto|aggiornamento\s+preposto/;
+
+function classificationBlob(payload = {}, fileName = "") {
+  const extracted = payload.extracted_data || payload;
+  return [fileName, extracted.corso, payload.summary, extracted.tipo_formazione]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
+  const text = safeLower(
+    classificationBlob(payload, fileName)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+  );
+  if (PREPOSTO_CLASSIFICATION_RE.test(text)) return "PREPOSTO";
+  const type = payload.document_type;
+  return type == null || type === "" ? "ALTRO" : String(type);
 }
 
 function findMaestranzaIndex(maestranze, worker) {
@@ -858,12 +880,26 @@ export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
 }
 
 /** Analisi standard veloce: solo mapping lato codice, senza riferimenti pagina. */
-export function buildFastFinalUpdates(aiPayload) {
-  const { updates, mappingWarnings } = mapExtractedToUpdates(
-    aiPayload.document_type,
+export function buildFastFinalUpdates(aiPayload, meta = {}) {
+  const originalType = aiPayload.document_type;
+  const documentType = resolveDocumentTypeWithPriority(aiPayload, meta.fileName || "");
+  const mappingWarnings = [];
+  if (
+    documentType === "PREPOSTO" &&
+    originalType &&
+    String(originalType).toUpperCase() !== "PREPOSTO"
+  ) {
+    mappingWarnings.push(
+      "Documento riclassificato come PREPOSTO (priorità su formazione lavoratori)."
+    );
+  }
+
+  const { updates, mappingWarnings: mapWarnings } = mapExtractedToUpdates(
+    documentType,
     aiPayload.extracted_data || {},
     { confidence: aiPayload.confidence ?? 0 }
   );
+  mappingWarnings.push(...mapWarnings);
 
   return {
     updates: {
@@ -906,6 +942,12 @@ export function detectDocumentType(fileName = "") {
   if (n.includes("unilav")) return "UNILAV";
   if (n.includes("idoneit")) return "IDONEITA";
   if (
+    n.includes("preposto") ||
+    n.includes("organizzazione di cantiere per preposti")
+  ) {
+    return "PREPOSTO";
+  }
+  if (
     n.includes("16 ore") ||
     n.includes("12 ore") ||
     n.includes("8 ore") ||
@@ -919,7 +961,6 @@ export function detectDocumentType(fileName = "") {
     return "FORMAZIONE_SPECIFICA";
   }
   if (n.includes("formazione") || n.includes("81-08") || n.includes("8108")) return "FORMAZIONE_BASE";
-  if (n.includes("preposto")) return "PREPOSTO";
   if (n.includes("antincendio")) return "ANTINCENDIO";
   if (n.includes("soccorso") || n.includes("primo soccorso") || /\bps\b/.test(n)) return "PRIMO_SOCCORSO";
   if (n.includes("pontegg")) return "PONTEGGI";

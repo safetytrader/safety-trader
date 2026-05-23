@@ -92,6 +92,12 @@ export function buildDocumentHints(fileName = "", text = "") {
     hints.push("IDONEITA");
   }
   if (
+    /preposto|preposti|organizzazione\s+(di\s+)?cantiere\s+(per\s+)?preposti|formazione\s+preposto|aggiornamento\s+preposto/.test(
+      sample
+    )
+  ) {
+    hints.push("PREPOSTO");
+  } else if (
     /rischio\s+(alto|medio|basso)|lavoratori.*\b(8|12|16)\s*ore|formazione\s+lavoratori\s+complet|modulo\s+generale.*modulo\s+specifico|generale\s+e\s+specifica/.test(
       sample
     )
@@ -103,9 +109,6 @@ export function buildDocumentHints(fileName = "", text = "") {
     hints.push("FORMAZIONE_BASE");
   } else if (/formazione|attestato|corso/.test(sample)) {
     hints.push("FORMAZIONE_BASE");
-  }
-  if (/preposto/.test(sample)) {
-    hints.push("PREPOSTO");
   }
   if (/antincendio/.test(sample)) {
     hints.push("ANTINCENDIO");

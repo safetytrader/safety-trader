@@ -16,7 +16,11 @@ Estrai solo campi pertinenti al tipo:
 - VISURA: impresa, codice_fiscale_impresa, data_emissione, data_scadenza se reale
 - UNILAV: lavoratore, codice_fiscale_lavoratore, mansione o qualifica lavorativa, tipo_comunicazione (assunzione/proroga/trasformazione/cessazione), tipo_contratto, data_inizio_rapporto, data_fine_contratto, data_proroga, data_scadenza (per proroga: data_proroga e/o data_scadenza)
 - IDONEITA: lavoratore, mansione, data_emissione, data_scadenza
-- FORMAZIONE_* (attestati lavoratori): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
+- PREPOSTO (priorità su formazione lavoratori): lavoratore, codice_fiscale_lavoratore, corso, data_erogazione, data_inizio, data_fine, data_scadenza se espressa, durata_ore
+- FORMAZIONE_* (solo attestati lavoratori, NON preposto): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
+
+Classificazione PREPOSTO (ha priorità su FORMAZIONE_*):
+Se titolo/corso contiene preposto, preposti, formazione preposto, aggiornamento preposto, organizzazione di cantiere per preposti → document_type PREPOSTO (NON formazione base/specifica lavoratori).
 
 Classificazione formazione lavoratori:
 - FORMAZIONE_BASE: solo formazione generale/modulo generale/corso generale lavoratori, tipicamente 4 ore, SENZA formazione specifica o rischio specifico nel titolo.
