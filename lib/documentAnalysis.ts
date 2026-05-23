@@ -377,11 +377,60 @@ function normalizeExtractedData(raw = {}) {
     data_fine_contratto: raw.data_fine_contratto ?? null,
     data_inizio_rapporto: raw.data_inizio_rapporto ?? null,
     data_proroga: raw.data_proroga ?? null,
+    data_inizio: raw.data_inizio ?? null,
+    data_fine: raw.data_fine ?? null,
     ente: raw.ente ?? null,
     corso: raw.corso ?? null,
     tipo_contratto: raw.tipo_contratto ?? null,
     tipo_comunicazione: raw.tipo_comunicazione ?? null,
+    durata_ore: raw.durata_ore ?? null,
+    rischio: raw.rischio ?? null,
+    soggetto_formatore: raw.soggetto_formatore ?? null,
+    tipo_formazione: raw.tipo_formazione ?? null,
   };
+}
+
+function addYearsIsoDate(isoYmd, years) {
+  const norm = normalizeIsoDateOnly(isoYmd);
+  if (!norm) return null;
+  const [y, m, d] = norm.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setFullYear(date.getFullYear() + years);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Scadenza formazione specifica (YYYY-MM-DD): data_scadenza esplicita, altrimenti fine/erogazione + 5 anni. */
+export function resolveFormazioneSpecScadenza(extracted = {}, mappingWarnings = []) {
+  const explicit = normalizeIsoDateOnly(extracted.data_scadenza);
+  if (explicit) return explicit;
+
+  const fromFine = normalizeIsoDateOnly(extracted.data_fine);
+  if (fromFine) return addYearsIsoDate(fromFine, 5);
+
+  const fromErogazione = normalizeIsoDateOnly(
+    extracted.data_erogazione || extracted.data_emissione
+  );
+  if (fromErogazione) return addYearsIsoDate(fromErogazione, 5);
+
+  mappingWarnings.push(
+    "Formazione: impossibile calcolare scadenza specifica (manca data_scadenza, data_fine e data_erogazione)."
+  );
+  return null;
+}
+
+function pushFormazioneWorker(updates, extracted, fields, mappingWarnings) {
+  const w = workerFromExtracted(extracted, fields);
+  if (w) {
+    updates.maestranze.push(w);
+    return;
+  }
+  const nome = String(extracted.lavoratore || "").trim();
+  if (!nome) {
+    mappingWarnings.push("Formazione: lavoratore non rilevato; maestranza non creata.");
+  }
 }
 
 /** Normalizza una data in YYYY-MM-DD se possibile. */
@@ -521,13 +570,26 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       if (scadenza) updates.allegatiScadenze.visura = scadenza;
       break;
     case "FORMAZIONE_BASE": {
-      const w = workerFromExtracted(extracted, { formazioneBase: true });
-      if (w) updates.maestranze.push(w);
+      pushFormazioneWorker(
+        updates,
+        extracted,
+        { formazioneBase: true },
+        mappingWarnings
+      );
       break;
     }
     case "FORMAZIONE_SPECIFICA": {
-      const w = workerFromExtracted(extracted, { formazioneSpec: erogazione || "✓" });
-      if (w) updates.maestranze.push(w);
+      const spec = resolveFormazioneSpecScadenza(extracted, mappingWarnings);
+      const fields = {};
+      if (spec) fields.formazioneSpec = spec;
+      pushFormazioneWorker(updates, extracted, fields, mappingWarnings);
+      break;
+    }
+    case "FORMAZIONE_BASE_SPECIFICA": {
+      const spec = resolveFormazioneSpecScadenza(extracted, mappingWarnings);
+      const fields = { formazioneBase: true };
+      if (spec) fields.formazioneSpec = spec;
+      pushFormazioneWorker(updates, extracted, fields, mappingWarnings);
       break;
     }
     case "IDONEITA": {
@@ -654,7 +716,19 @@ export function detectDocumentType(fileName = "") {
   if (n.includes("pos") || n.includes("piano operativo")) return "POS";
   if (n.includes("unilav")) return "UNILAV";
   if (n.includes("idoneit")) return "IDONEITA";
-  if (n.includes("formazione") && (n.includes("specif") || n.includes("rischio"))) return "FORMAZIONE_SPECIFICA";
+  if (
+    n.includes("16 ore") ||
+    n.includes("12 ore") ||
+    n.includes("8 ore") ||
+    (n.includes("rischio") && n.includes("lavorator")) ||
+    n.includes("generale e specifica") ||
+    n.includes("base e specifica")
+  ) {
+    return "FORMAZIONE_BASE_SPECIFICA";
+  }
+  if (n.includes("formazione") && (n.includes("specif") || n.includes("rischio"))) {
+    return "FORMAZIONE_SPECIFICA";
+  }
   if (n.includes("formazione") || n.includes("81-08") || n.includes("8108")) return "FORMAZIONE_BASE";
   if (n.includes("preposto")) return "PREPOSTO";
   if (n.includes("antincendio")) return "ANTINCENDIO";
@@ -737,7 +811,14 @@ export function buildMockAnalysis({ fileName, documentType, extractedOverrides =
     case "FORMAZIONE_SPECIFICA":
       updates.maestranze.push({
         nome: extractedOverrides.nome || "Lavoratore Estratto",
-        formazioneSpec: oggi,
+        formazioneSpec: extractedOverrides.formazioneSpec || "2026-01-01",
+      });
+      break;
+    case "FORMAZIONE_BASE_SPECIFICA":
+      updates.maestranze.push({
+        nome: extractedOverrides.nome || "Lavoratore Estratto",
+        formazioneBase: true,
+        formazioneSpec: extractedOverrides.formazioneSpec || "2025-10-28",
       });
       break;
     case "IDONEITA":

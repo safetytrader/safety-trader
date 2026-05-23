@@ -91,10 +91,17 @@ export function buildDocumentHints(fileName = "", text = "") {
   if (/idoneit|giudizio\s+di\s+idoneita|idoneita\s+sanitaria/.test(sample)) {
     hints.push("IDONEITA");
   }
-  if (/formazione\s+specifica|rischio\s+specifico/.test(sample)) {
+  if (
+    /rischio\s+(alto|medio|basso)|lavoratori.*\b(8|12|16)\s*ore|formazione\s+lavoratori\s+complet|modulo\s+generale.*modulo\s+specifico|generale\s+e\s+specifica/.test(
+      sample
+    )
+  ) {
+    hints.push("FORMAZIONE_BASE_SPECIFICA");
+  } else if (/formazione\s+specifica|modulo\s+specifico|rischio\s+specifico/.test(sample)) {
     hints.push("FORMAZIONE_SPECIFICA");
-  }
-  if (/formazione|attestato|corso/.test(sample)) {
+  } else if (/formazione\s+generale|modulo\s+generale|\b4\s*ore\b/.test(sample)) {
+    hints.push("FORMAZIONE_BASE");
+  } else if (/formazione|attestato|corso/.test(sample)) {
     hints.push("FORMAZIONE_BASE");
   }
   if (/preposto/.test(sample)) {

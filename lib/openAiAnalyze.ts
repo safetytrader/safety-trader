@@ -8,7 +8,7 @@ summary massimo 200 caratteri.
 warnings massimo 5 elementi.
 Nessun riferimento pagina, excerpt, checklist_evidence o updates.
 
-document_type: DURC | POS | VISURA | FORMAZIONE_BASE | FORMAZIONE_SPECIFICA | IDONEITA | UNILAV | PREPOSTO | ANTINCENDIO | PRIMO_SOCCORSO | PONTEGGI | MMT | PLE | GRU | SPAZI_CONFINATI | ALTRO
+document_type: DURC | POS | VISURA | FORMAZIONE_BASE | FORMAZIONE_SPECIFICA | FORMAZIONE_BASE_SPECIFICA | IDONEITA | UNILAV | PREPOSTO | ANTINCENDIO | PRIMO_SOCCORSO | PONTEGGI | MMT | PLE | GRU | SPAZI_CONFINATI | ALTRO
 
 Estrai solo campi pertinenti al tipo:
 - DURC: impresa, codice_fiscale_impresa, data_emissione, data_scadenza, ente
@@ -16,7 +16,14 @@ Estrai solo campi pertinenti al tipo:
 - VISURA: impresa, codice_fiscale_impresa, data_emissione, data_scadenza se reale
 - UNILAV: lavoratore, codice_fiscale_lavoratore, tipo_comunicazione (assunzione/proroga/trasformazione/cessazione), tipo_contratto, data_inizio_rapporto, data_fine_contratto, data_proroga, data_scadenza (per proroga: data_proroga e/o data_scadenza)
 - IDONEITA: lavoratore, mansione, data_emissione, data_scadenza
-- FORMAZIONE_* / attestati: lavoratore, corso, data_erogazione
+- FORMAZIONE_* (attestati lavoratori): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
+
+Classificazione formazione lavoratori:
+- FORMAZIONE_BASE: solo formazione generale/modulo generale/corso generale lavoratori, tipicamente 4 ore, SENZA formazione specifica o rischio specifico nel titolo.
+- FORMAZIONE_SPECIFICA: solo formazione specifica/modulo specifico/rischio basso-medio-alto, NON attestato unico completo generale+specifica.
+- FORMAZIONE_BASE_SPECIFICA: attestato unico completo lavoratori (generale+specifica insieme), es. corso lavoratori rischio alto 16 ore, rischio medio 12 ore, rischio basso 8 ore, formazione lavoratori completa, contiene sia modulo generale sia specifico.
+Se l'attestato riporta un corso lavoratori completo di durata 8, 12 o 16 ore, oppure rischio basso/medio/alto complessivo, considera il documento come formazione generale + specifica e restituisci document_type FORMAZIONE_BASE_SPECIFICA.
+Se il tipo di formazione non è chiaro, usa ALTRO e aggiungi warning.
 
 Schema:
 {
@@ -38,7 +45,13 @@ Schema:
     "tipo_contratto": null,
     "tipo_comunicazione": null,
     "data_inizio_rapporto": null,
-    "data_proroga": null
+    "data_proroga": null,
+    "data_inizio": null,
+    "data_fine": null,
+    "durata_ore": null,
+    "rischio": null,
+    "soggetto_formatore": null,
+    "tipo_formazione": null
   },
   "warnings": []
 }`;
