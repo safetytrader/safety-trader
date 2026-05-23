@@ -14,7 +14,7 @@ Estrai solo campi pertinenti al tipo:
 - DURC: impresa, codice_fiscale_impresa, data_emissione, data_scadenza, ente
 - POS: solo classificazione POS + impresa se presente (non estrarre sezioni dettagliate)
 - VISURA: impresa, codice_fiscale_impresa, data_emissione, data_scadenza se reale
-- UNILAV: lavoratore, codice_fiscale_lavoratore, tipo_comunicazione (assunzione/proroga/trasformazione/cessazione), tipo_contratto, data_inizio_rapporto, data_fine_contratto, data_proroga, data_scadenza (per proroga: data_proroga e/o data_scadenza)
+- UNILAV: lavoratore, codice_fiscale_lavoratore, mansione o qualifica lavorativa, tipo_comunicazione (assunzione/proroga/trasformazione/cessazione), tipo_contratto, data_inizio_rapporto, data_fine_contratto, data_proroga, data_scadenza (per proroga: data_proroga e/o data_scadenza)
 - IDONEITA: lavoratore, mansione, data_emissione, data_scadenza
 - FORMAZIONE_* (attestati lavoratori): lavoratore, codice_fiscale_lavoratore, corso, durata_ore, rischio (basso/medio/alto/non indicato), data_erogazione, data_inizio, data_fine, data_scadenza (solo se espressa nel documento), soggetto_formatore, tipo_formazione (generale/specifica/generale_specifica)
 
@@ -36,6 +36,7 @@ Schema:
     "lavoratore": null,
     "codice_fiscale_lavoratore": null,
     "mansione": null,
+    "qualifica": null,
     "data_emissione": null,
     "data_erogazione": null,
     "data_scadenza": null,

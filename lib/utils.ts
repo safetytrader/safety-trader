@@ -11,6 +11,32 @@ export function calcStatus(checks) {
   return "non idoneo";
 }
 
+/** Nominativo maestranza: trim, spazi singoli, MAIUSCOLO (mantiene accenti). */
+export function normalizeWorkerName(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleUpperCase("it-IT");
+}
+
+/** Qualifica derivata da attestato formazione — non va in campo qualifica. */
+export function isFormationLikeQualifica(value) {
+  const q = String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  if (!q) return false;
+  return (
+    q.includes("formazione") ||
+    q.includes("corso") ||
+    q.includes("rischio alto") ||
+    q.includes("rischio medio") ||
+    q.includes("rischio basso") ||
+    q.includes("lavoratori rischio")
+  );
+}
+
 // Normalizzazione nome per deduplicazione
 export function normalizeName(name) {
   return String(name ?? "")

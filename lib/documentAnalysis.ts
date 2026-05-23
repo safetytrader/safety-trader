@@ -1,6 +1,11 @@
 // @ts-nocheck
 import { ALLEGATI_CONFIG, CHECKLIST_ITEMS } from "@/lib/constants";
-import { deduplicateWorkers, nameSimilarity } from "@/lib/utils";
+import {
+  deduplicateWorkers,
+  isFormationLikeQualifica,
+  nameSimilarity,
+  normalizeWorkerName,
+} from "@/lib/utils";
 
 /** Chiavi allegati nel DB app (testo completo) */
 export const ALLEGATI_KEY_MAP = {
@@ -371,6 +376,7 @@ function normalizeExtractedData(raw = {}) {
     lavoratore: raw.lavoratore ?? null,
     codice_fiscale_lavoratore: codiceFiscaleLavoratore,
     mansione: raw.mansione ?? null,
+    qualifica: raw.qualifica ?? null,
     data_emissione: raw.data_emissione ?? null,
     data_erogazione: raw.data_erogazione ?? null,
     data_scadenza: raw.data_scadenza ?? null,
@@ -527,12 +533,20 @@ function enrichCheckRefsFromReferences(
   return { ...updates, checkRefs };
 }
 
-function workerFromExtracted(extracted, fields = {}) {
-  const nome = (extracted.lavoratore || "").trim();
+function extractWorkerQualifica(extracted = {}) {
+  const raw = String(extracted.qualifica || extracted.mansione || "").trim();
+  if (!raw || isFormationLikeQualifica(raw)) return null;
+  return raw;
+}
+
+function workerFromExtracted(extracted, fields = {}, options = {}) {
+  const nome = normalizeWorkerName(extracted.lavoratore || "");
   if (!nome) return null;
   const w = { nome, ...fields };
-  const mansione = (extracted.mansione || extracted.corso || "").trim();
-  if (mansione) w.qualifica = mansione;
+  if (options.withQualifica) {
+    const qualifica = extractWorkerQualifica(extracted);
+    if (qualifica) w.qualifica = qualifica;
+  }
   return w;
 }
 
@@ -594,12 +608,14 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
     }
     case "IDONEITA": {
       const idoneita = scadenza || formatIsoDateToApp(extracted.data_emissione);
-      const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {});
+      const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {}, {
+        withQualifica: true,
+      });
       if (w) updates.maestranze.push(w);
       break;
     }
     case "UNILAV": {
-      const w = workerFromExtracted(extracted);
+      const w = workerFromExtracted(extracted, {}, { withQualifica: true });
       if (!w) break;
       const unilav = resolveUnilavFromExtracted(extracted, mappingWarnings);
       if (unilav) w.unilav = unilav;
@@ -946,18 +962,42 @@ export function applyAiUpdates(current = {}, updates = {}) {
 
   for (const incoming of updates.maestranze || []) {
     if (!incoming?.nome?.trim()) continue;
-    const idx = maestranze.findIndex(m => nameSimilarity(m.nome, incoming.nome) >= 0.75);
+
+    const incomingWorker = { ...incoming, nome: normalizeWorkerName(incoming.nome) };
+    if (
+      incomingWorker.qualifica &&
+      isFormationLikeQualifica(incomingWorker.qualifica)
+    ) {
+      delete incomingWorker.qualifica;
+    }
+
+    const idx = maestranze.findIndex(
+      m => nameSimilarity(m.nome, incomingWorker.nome) >= 0.75
+    );
     if (idx >= 0) {
       const existing = { ...maestranze[idx] };
       const merged = { ...existing };
+      const nomeNorm = normalizeWorkerName(merged.nome);
+      if (nomeNorm && merged.nome !== nomeNorm) {
+        merged.nome = nomeNorm;
+      }
       const workerApplied = {};
       const workerSkipped = {};
-      for (const [field, value] of Object.entries(incoming)) {
+      if (nomeNorm && existing.nome !== nomeNorm) {
+        workerApplied.nome = nomeNorm;
+      }
+      for (const [field, value] of Object.entries(incomingWorker)) {
         if (field === "nome") continue;
         if (isFieldEmpty(value)) continue;
-        if (field === "qualifica" && !isFieldEmpty(existing.qualifica)) {
-          workerSkipped[field] = { existing: existing.qualifica, proposed: value };
-          continue;
+        if (field === "qualifica") {
+          if (isFormationLikeQualifica(value)) {
+            workerSkipped[field] = { existing: existing.qualifica, proposed: value };
+            continue;
+          }
+          if (!isFieldEmpty(existing.qualifica)) {
+            workerSkipped[field] = { existing: existing.qualifica, proposed: value };
+            continue;
+          }
         }
         if (isFieldEmpty(existing[field])) {
           merged[field] = value;
@@ -965,11 +1005,6 @@ export function applyAiUpdates(current = {}, updates = {}) {
         } else {
           workerSkipped[field] = { existing: existing[field], proposed: value };
         }
-      }
-      const mansione = (incoming.qualifica || "").trim();
-      if (mansione && isFieldEmpty(existing.qualifica) && isFieldEmpty(merged.qualifica)) {
-        merged.qualifica = mansione;
-        workerApplied.qualifica = mansione;
       }
       maestranze[idx] = merged;
       if (Object.keys(workerApplied).length) {
@@ -981,9 +1016,10 @@ export function applyAiUpdates(current = {}, updates = {}) {
         skipped_changes.maestranze.push({ nome: existing.nome, fields: workerSkipped });
       }
     } else {
-      const nuova = { ...incoming };
-      const mansione = (incoming.qualifica || "").trim();
-      if (mansione && isFieldEmpty(nuova.qualifica)) nuova.qualifica = mansione;
+      const nuova = { ...incomingWorker };
+      if (nuova.qualifica && isFormationLikeQualifica(nuova.qualifica)) {
+        delete nuova.qualifica;
+      }
       maestranze.push(nuova);
       if (!applied_changes.maestranze) applied_changes.maestranze = [];
       applied_changes.maestranze.push({ nome: nuova.nome, created: true, fields: { ...nuova } });

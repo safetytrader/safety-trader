@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { replaceMaestranzeImpresa } from "@/lib/db";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { calcScadenza } from "@/lib/utils";
+import { calcScadenza, normalizeWorkerName } from "@/lib/utils";
 
 const OPTIONAL_COLS = [
   { key: "preposto", label: "Preposto", scadType: "preposto" },
@@ -36,6 +36,13 @@ export const emptyMaestranza = () => ({
 });
 
 const hasVal = v => v != null && String(v).trim() !== "";
+
+function normalizeMaestranzaRecord(m) {
+  return {
+    ...m,
+    nome: normalizeWorkerName(m?.nome),
+  };
+}
 
 export const isBoolChecked = v =>
   v === true || v === "true" || v === "✓" || v === "si" || v === "Sì";
@@ -372,7 +379,7 @@ export function MaestranzeTab({
   };
 
   const handleAdd = () => {
-    const nuovaLista = [...imp.maestranze, addForm];
+    const nuovaLista = [...imp.maestranze, normalizeMaestranzaRecord(addForm)];
     persistMaestranze(nuovaLista);
     setAddForm(emptyMaestranza());
     setShowAddModal(false);
@@ -381,14 +388,14 @@ export function MaestranzeTab({
   const openEdit = () => {
     if (selectedIndex === null) return;
     setShowAddModal(false);
-    setEditForm({ ...emptyMaestranza(), ...imp.maestranze[selectedIndex] });
+    setEditForm(normalizeMaestranzaRecord({ ...emptyMaestranza(), ...imp.maestranze[selectedIndex] }));
     setShowEditModal(true);
   };
 
   const handleSaveEdit = () => {
     if (selectedIndex === null) return;
     const nuovaLista = imp.maestranze.map((m, j) =>
-      j === selectedIndex ? { ...editForm } : m
+      j === selectedIndex ? normalizeMaestranzaRecord(editForm) : m
     );
     persistMaestranze(nuovaLista);
     setShowEditModal(false);
@@ -550,7 +557,7 @@ export function MaestranzeTab({
                             />
                           </td>
                           <td className="maestranze-td maestranze-td-name">
-                            {m.nome || "—"}
+                            {normalizeWorkerName(m.nome) || "—"}
                           </td>
                           <td className="maestranze-td maestranze-td-qual">
                             {m.qualifica || "—"}
