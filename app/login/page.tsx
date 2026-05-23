@@ -3,22 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { signIn, signUp } from "@/lib/auth";
+import { signIn } from "@/lib/auth";
 
 type MessageType = "success" | "error" | null;
+
+const LOGIN_ERROR_MESSAGE =
+  "Account non autorizzato o credenziali non valide.";
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [registerMode, setRegisterMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [nome, setNome] = useState("");
-  const [cognome, setCognome] = useState("");
-  const [societa, setSocieta] = useState("");
-  const [sedeVia, setSedeVia] = useState("");
-  const [sedeCap, setSedeCap] = useState("");
-  const [sedeCitta, setSedeCitta] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -39,62 +35,8 @@ export default function LoginPage() {
 
       showMsg("Accesso riuscito. Reindirizzamento in corso...", "success");
       router.push("/");
-    } catch (err) {
-      const text =
-        err instanceof Error ? err.message : "Accesso non riuscito. Verifica email e password.";
-      showMsg(text, "error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function validateRegister() {
-    if (!email.trim()) return "Inserisci l'email.";
-    if (!password.trim()) return "Inserisci la password.";
-    if (!nome.trim()) return "Inserisci il nome.";
-    if (!cognome.trim()) return "Inserisci il cognome.";
-    if (!societa.trim()) return "Inserisci la società.";
-    if (!sedeVia.trim()) return "Inserisci l'indirizzo della sede (via).";
-    if (!sedeCap.trim()) return "Inserisci il CAP.";
-    if (!sedeCitta.trim()) return "Inserisci la città.";
-    return null;
-  }
-
-  async function handleRegister() {
-    if (!registerMode) {
-      setRegisterMode(true);
-      showMsg("Compila i dati profilo per completare la registrazione.", "error");
-      return;
-    }
-
-    const validationError = validateRegister();
-    if (validationError) {
-      showMsg(validationError, "error");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setMessage("");
-      setMessageType(null);
-
-      await signUp(email, password, {
-        nome,
-        cognome,
-        societa,
-        sede_via: sedeVia,
-        sede_cap: sedeCap,
-        sede_citta: sedeCitta,
-      });
-
-      showMsg(
-        "Registrazione completata. Controlla la tua email per confermare l'account.",
-        "success"
-      );
-    } catch (err) {
-      const text =
-        err instanceof Error ? err.message : "Registrazione non riuscita.";
-      showMsg(text, "error");
+    } catch {
+      showMsg(LOGIN_ERROR_MESSAGE, "error");
     } finally {
       setLoading(false);
     }
@@ -164,11 +106,9 @@ export default function LoginPage() {
             <div className="auth-card">
               <div className="mobile-logo">ST</div>
 
-              <h2>{registerMode ? "Crea il tuo account" : "Accedi al tuo account"}</h2>
+              <h2>Accedi al tuo account</h2>
               <p className="auth-subtitle">
-                {registerMode
-                  ? "Inserisci credenziali e dati profilo per registrarti su Safety Trader."
-                  : "Inserisci le credenziali per continuare nella tua area documentale."}
+                Inserisci le credenziali per continuare nella tua area documentale.
               </p>
 
               {message && (
@@ -203,141 +143,35 @@ export default function LoginPage() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="••••••••"
-                  autoComplete={registerMode ? "new-password" : "current-password"}
+                  autoComplete="current-password"
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !loading) {
-                      if (registerMode) handleRegister();
-                      else handleLogin();
+                      handleLogin();
                     }
                   }}
                 />
               </div>
 
-              {!registerMode ? (
-                <p className="forgot-link-wrap">
-                  <Link href="/forgot-password" className="auth-text-link">
-                    Password dimenticata?
-                  </Link>
-                </p>
-              ) : null}
-
-              {registerMode ? (
-                <div className="profile-section">
-                  <div className="profile-section-head">Dati personali e Società</div>
-
-                  <div className="profile-grid profile-grid-2">
-                    <div className="form-group">
-                      <label htmlFor="nome">Nome</label>
-                      <input
-                        id="nome"
-                        type="text"
-                        value={nome}
-                        onChange={e => setNome(e.target.value)}
-                        placeholder="Mario"
-                        autoComplete="given-name"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="cognome">Cognome</label>
-                      <input
-                        id="cognome"
-                        type="text"
-                        value={cognome}
-                        onChange={e => setCognome(e.target.value)}
-                        placeholder="Rossi"
-                        autoComplete="family-name"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="societa">Società</label>
-                    <input
-                      id="societa"
-                      type="text"
-                      value={societa}
-                      onChange={e => setSocieta(e.target.value)}
-                      placeholder="Ragione sociale"
-                      autoComplete="organization"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="sede_via">Indirizzo sede</label>
-                    <input
-                      id="sede_via"
-                      type="text"
-                      value={sedeVia}
-                      onChange={e => setSedeVia(e.target.value)}
-                      placeholder="Via e numero civico"
-                      autoComplete="street-address"
-                    />
-                  </div>
-
-                  <div className="profile-grid profile-grid-2">
-                    <div className="form-group">
-                      <label htmlFor="sede_cap">CAP</label>
-                      <input
-                        id="sede_cap"
-                        type="text"
-                        value={sedeCap}
-                        onChange={e => setSedeCap(e.target.value)}
-                        placeholder="00100"
-                        autoComplete="postal-code"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="sede_citta">Città</label>
-                      <input
-                        id="sede_citta"
-                        type="text"
-                        value={sedeCitta}
-                        onChange={e => setSedeCitta(e.target.value)}
-                        placeholder="Roma"
-                        autoComplete="address-level2"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {registerMode ? (
-                <p className="mode-toggle">
-                  <button
-                    type="button"
-                    className="mode-toggle-btn"
-                    onClick={() => {
-                      setRegisterMode(false);
-                      setMessage("");
-                      setMessageType(null);
-                    }}
-                  >
-                    Hai già un account? Accedi
-                  </button>
-                </p>
-              ) : null}
+              <p className="forgot-link-wrap">
+                <Link href="/forgot-password" className="auth-text-link">
+                  Password dimenticata?
+                </Link>
+              </p>
 
               <div className="actions">
-                {!registerMode ? (
-                  <button
-                    type="button"
-                    className="primary-btn"
-                    onClick={handleLogin}
-                    disabled={loading}
-                  >
-                    {loading ? "Operazione in corso..." : "Accedi"}
-                  </button>
-                ) : null}
-
                 <button
                   type="button"
-                  className={registerMode ? "primary-btn" : "secondary-btn"}
-                  onClick={handleRegister}
+                  className="primary-btn"
+                  onClick={handleLogin}
                   disabled={loading}
                 >
-                  {loading ? "Operazione in corso..." : "Registrati"}
+                  {loading ? "Operazione in corso..." : "Accedi"}
                 </button>
               </div>
+
+              <p className="authorized-note">
+                Accesso riservato agli utenti autorizzati.
+              </p>
 
               <div className="auth-links">
                 <Link href="/privacy" className="auth-text-link">
@@ -347,8 +181,7 @@ export default function LoginPage() {
             </div>
 
             <p className="security-note">
-              Accesso riservato agli utenti autorizzati. I dati sono protetti
-              tramite autenticazione Supabase e policy RLS.
+              I dati sono protetti tramite autenticazione Supabase e policy RLS.
             </p>
           </div>
         </section>
@@ -576,52 +409,6 @@ export default function LoginPage() {
           overflow-y: auto;
         }
 
-        .profile-section {
-          margin-top: 4px;
-          padding-top: 14px;
-          border-top: 1px solid #eef2f7;
-        }
-
-        .profile-section-head {
-          margin-bottom: 4px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: #64748b;
-        }
-
-        .profile-grid {
-          display: grid;
-          gap: 0;
-        }
-
-        .profile-grid-2 {
-          grid-template-columns: 1fr 1fr;
-          gap: 0 10px;
-        }
-
-        .mode-toggle {
-          margin: 14px 0 0;
-          text-align: center;
-        }
-
-        .mode-toggle-btn {
-          border: 0;
-          background: none;
-          padding: 0;
-          color: #2563eb;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-          text-decoration: underline;
-          text-underline-offset: 3px;
-        }
-
-        .mode-toggle-btn:hover {
-          color: #1d4ed8;
-        }
-
         .mobile-logo {
           display: none;
           margin-bottom: 22px;
@@ -726,8 +513,7 @@ export default function LoginPage() {
           margin-top: 18px;
         }
 
-        .primary-btn,
-        .secondary-btn {
+        .primary-btn {
           height: 48px;
           border-radius: 16px;
           border: 0;
@@ -735,10 +521,7 @@ export default function LoginPage() {
           font-weight: 900;
           cursor: pointer;
           transition: transform 0.18s ease, box-shadow 0.18s ease,
-            background 0.18s ease, border-color 0.18s ease;
-        }
-
-        .primary-btn {
+            background 0.18s ease;
           background: #2563eb;
           color: #ffffff;
           box-shadow: 0 14px 30px rgba(37, 99, 235, 0.24);
@@ -750,24 +533,19 @@ export default function LoginPage() {
           box-shadow: 0 18px 38px rgba(37, 99, 235, 0.28);
         }
 
-        .secondary-btn {
-          border: 1px solid #dbe3ef;
-          background: #ffffff;
-          color: #0f172a;
-        }
-
-        .secondary-btn:hover {
-          background: #f8fafc;
-          border-color: #cbd5e1;
-          transform: translateY(-1px);
-        }
-
-        .primary-btn:disabled,
-        .secondary-btn:disabled {
+        .primary-btn:disabled {
           cursor: not-allowed;
           opacity: 0.6;
           transform: none;
           box-shadow: none;
+        }
+
+        .authorized-note {
+          margin: 14px 0 0;
+          text-align: center;
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
         }
 
         .auth-links {
@@ -940,12 +718,6 @@ export default function LoginPage() {
 
           h2 {
             font-size: 26px;
-          }
-
-
-          .profile-grid-2 {
-            grid-template-columns: 1fr;
-            gap: 0;
           }
         }
       `}</style>

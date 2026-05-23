@@ -7,6 +7,7 @@ function rowToImpresaApp(row) {
     nome: row.nome ?? "",
     attivita: row.attivita ?? "",
     checks: {},
+    checkRefs: {},
     allegati: {},
     allegatiScadenze: {},
     note: row.note ?? "",
@@ -54,12 +55,16 @@ function normalizeJsonMap(value) {
   return typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function normalizeCheckRefs(value) {
+  return normalizeJsonMap(value);
+}
+
 export async function getChecklistByImpresa(impresaId) {
   if (impresaId == null || impresaId === "") return null;
 
   const { data, error } = await supabase
     .from("checklist_impresa")
-    .select("impresa_id, checks, note, updated_at")
+    .select("impresa_id, checks, check_refs, note, updated_at")
     .eq("impresa_id", impresaId)
     .order("updated_at", { ascending: false })
     .limit(1);
@@ -74,18 +79,21 @@ export async function getChecklistByImpresa(impresaId) {
   return {
     ...row,
     checks: normalizeChecks(row.checks),
+    checkRefs: normalizeCheckRefs(row.check_refs),
   };
 }
 
-export async function upsertChecklistImpresa(impresaId, checks, note) {
+export async function upsertChecklistImpresa(impresaId, checks, note, checkRefs) {
   if (impresaId == null || impresaId === "") {
     throw new Error("impresa_id mancante");
   }
 
   const normalizedChecks = normalizeChecks(checks);
+  const normalizedCheckRefs = normalizeCheckRefs(checkRefs);
   const payload = {
     impresa_id: impresaId,
     checks: normalizedChecks,
+    check_refs: normalizedCheckRefs,
     note: note ?? "",
     updated_at: new Date().toISOString(),
   };
@@ -96,6 +104,7 @@ export async function upsertChecklistImpresa(impresaId, checks, note) {
       {
         impresa_id: impresaId,
         checks: normalizedChecks,
+        check_refs: normalizedCheckRefs,
         note: note ?? "",
         updated_at: payload.updated_at,
       },
@@ -119,6 +128,7 @@ export async function upsertChecklistImpresa(impresaId, checks, note) {
       .from("checklist_impresa")
       .update({
         checks: normalizedChecks,
+        check_refs: normalizedCheckRefs,
         note: note ?? "",
         updated_at: payload.updated_at,
       })
@@ -417,6 +427,7 @@ export async function insertDocumentAnalysis(row) {
 
 export async function loadImpresaStateForAi(supabaseClient, impresaId) {
   let checks = {};
+  let checkRefs = {};
   let note = "";
   let allegati = {};
   let allegatiScadenze = {};
@@ -424,7 +435,7 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
 
   const { data: checklistRows, error: checklistError } = await supabaseClient
     .from("checklist_impresa")
-    .select("checks, note")
+    .select("checks, check_refs, note")
     .eq("impresa_id", impresaId)
     .order("updated_at", { ascending: false })
     .limit(1);
@@ -432,6 +443,7 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
   if (checklistError) throw new Error(checklistError.message);
   if (checklistRows?.[0]) {
     checks = normalizeChecks(checklistRows[0].checks);
+    checkRefs = normalizeCheckRefs(checklistRows[0].check_refs);
     note = checklistRows[0].note ?? "";
   }
 
@@ -459,16 +471,18 @@ export async function loadImpresaStateForAi(supabaseClient, impresaId) {
   if (maestranzeError) throw new Error(maestranzeError.message);
   maestranze = (maestranzeRows ?? []).map(rowToMaestranzaApp);
 
-  return { checks, note, allegati, allegatiScadenze, maestranze };
+  return { checks, checkRefs, note, allegati, allegatiScadenze, maestranze };
 }
 
-async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note) {
+async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note, checkRefs) {
   const normalizedChecks = normalizeChecks(checks);
+  const normalizedCheckRefs = normalizeCheckRefs(checkRefs);
   const updatedAt = new Date().toISOString();
   const { error } = await supabaseClient.from("checklist_impresa").upsert(
     {
       impresa_id: impresaId,
       checks: normalizedChecks,
+      check_refs: normalizedCheckRefs,
       note: note ?? "",
       updated_at: updatedAt,
     },
@@ -490,6 +504,7 @@ async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note
       .from("checklist_impresa")
       .update({
         checks: normalizedChecks,
+        check_refs: normalizedCheckRefs,
         note: note ?? "",
         updated_at: updatedAt,
       })
@@ -501,6 +516,7 @@ async function upsertChecklistWithClient(supabaseClient, impresaId, checks, note
   const { error: insertError } = await supabaseClient.from("checklist_impresa").insert({
     impresa_id: impresaId,
     checks: normalizedChecks,
+    check_refs: normalizedCheckRefs,
     note: note ?? "",
     updated_at: updatedAt,
   });
@@ -572,9 +588,9 @@ async function replaceMaestranzeWithClient(supabaseClient, impresaId, maestranze
 export async function persistImpresaStateAfterAi(
   supabaseClient,
   impresaId,
-  { checks, note, allegati, allegatiScadenze, maestranze }
+  { checks, checkRefs, note, allegati, allegatiScadenze, maestranze }
 ) {
-  await upsertChecklistWithClient(supabaseClient, impresaId, checks, note);
+  await upsertChecklistWithClient(supabaseClient, impresaId, checks, note, checkRefs);
   await upsertAllegatiWithClient(supabaseClient, impresaId, allegati, allegatiScadenze);
   await replaceMaestranzeWithClient(supabaseClient, impresaId, maestranze);
 }
@@ -607,6 +623,7 @@ async function impresaWithChecklist(row) {
     const checklist = await getChecklistByImpresa(row.id);
     if (checklist) {
       imp.checks = checklist.checks;
+      imp.checkRefs = checklist.checkRefs ?? {};
       imp.note = checklist.note ?? "";
     }
   } catch (err) {

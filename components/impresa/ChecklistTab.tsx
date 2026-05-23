@@ -31,9 +31,14 @@ function rowStatusBadge(value) {
 }
 
 export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa }) {
-  const syncChecklist = async (checks, note) => {
+  const syncChecklist = async (checks, note, checkRefs) => {
     try {
-      await upsertChecklistImpresa(activeImpresa, checks, note);
+      await upsertChecklistImpresa(
+        activeImpresa,
+        checks,
+        note,
+        checkRefs ?? imp.checkRefs ?? {}
+      );
     } catch (err) {
       console.error("Errore salvataggio checklist Supabase:", err?.message || err);
     }
@@ -81,6 +86,12 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                 </span>
               </div>
 
+              <div className="checklist-col-headers" aria-hidden="true">
+                <span className="checklist-col-headers-voce">Voce</span>
+                <span className="checklist-col-headers-pag">Rif. pag.</span>
+                <span className="checklist-col-headers-stato">Stato</span>
+              </div>
+
               <div className="checklist-groups">
                 {LETTERS.map(l => {
                   const items = CHECKLIST_ITEMS.filter(i => i.lettera === l);
@@ -90,6 +101,7 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                       <div className="checklist-group-head">Lettera {l.toUpperCase()}</div>
                       {items.map(item => {
                         const current = imp.checks[item.id];
+                        const pageRef = imp.checkRefs?.[item.id] ?? "";
                         const badge = rowStatusBadge(current);
                         return (
                           <div key={item.id} className="checklist-row">
@@ -107,7 +119,11 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                                       updateImpresa(activeCantiere, activeImpresa, {
                                         checks: nuoviChecks,
                                       });
-                                      syncChecklist(nuoviChecks, imp.note ?? "");
+                                      syncChecklist(
+                                        nuoviChecks,
+                                        imp.note ?? "",
+                                        imp.checkRefs || {}
+                                      );
                                     }}
                                     className={`checklist-opt ${
                                       current === v
@@ -130,6 +146,23 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                                 </span>
                               </div>
                             </div>
+                            <input
+                              type="text"
+                              className="checklist-page-ref"
+                              value={pageRef}
+                              placeholder="pag. 3"
+                              aria-label={`Riferimento pagina per ${item.label}`}
+                              onChange={e => {
+                                const value = e.target.value.trim();
+                                const nuoviRefs = { ...(imp.checkRefs || {}) };
+                                if (!value) delete nuoviRefs[item.id];
+                                else nuoviRefs[item.id] = value;
+                                updateImpresa(activeCantiere, activeImpresa, {
+                                  checkRefs: nuoviRefs,
+                                });
+                                syncChecklist(imp.checks || {}, imp.note ?? "", nuoviRefs);
+                              }}
+                            />
                             <span className={badge.className}>{badge.label}</span>
                           </div>
                         );
@@ -149,7 +182,7 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
                   onChange={e => {
                     const nuovaNota = e.target.value;
                     updateImpresa(activeCantiere, activeImpresa, { note: nuovaNota });
-                    syncChecklist(imp.checks || {}, nuovaNota);
+                    syncChecklist(imp.checks || {}, nuovaNota, imp.checkRefs || {});
                   }}
                   rows={3}
                   className="checklist-textarea"
@@ -329,6 +362,48 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
           background: #f8fafc;
         }
 
+        .checklist-col-headers {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 22px 4px;
+          border-bottom: 1px solid #f1f5f9;
+          background: #ffffff;
+        }
+
+        .checklist-col-headers-voce {
+          flex: 1;
+          min-width: 0;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #94a3b8;
+        }
+
+        .checklist-col-headers-pag {
+          flex-shrink: 0;
+          width: 88px;
+          text-align: center;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #64748b;
+        }
+
+        .checklist-col-headers-stato {
+          flex-shrink: 0;
+          width: 108px;
+          text-align: right;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #94a3b8;
+        }
+
         .checklist-main-title {
           font-size: 12px;
           font-weight: 800;
@@ -369,9 +444,9 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
 
         .checklist-row {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: space-between;
-          gap: 16px;
+          gap: 12px;
           padding: 18px 22px;
           border-bottom: 1px solid #f8fafc;
           transition: background 0.15s ease;
@@ -516,6 +591,32 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
           border: 1px solid #fed7aa;
         }
 
+        .checklist-page-ref {
+          flex-shrink: 0;
+          width: 88px;
+          height: 34px;
+          box-sizing: border-box;
+          padding: 0 10px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          background: #ffffff;
+          color: #0f172a;
+          font-size: 12px;
+          font-weight: 600;
+          outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .checklist-page-ref::placeholder {
+          color: #94a3b8;
+          font-weight: 500;
+        }
+
+        .checklist-page-ref:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
+
         .checklist-notes {
           padding: 20px 22px 24px;
           border-top: 1px solid #e2e8f0;
@@ -568,8 +669,13 @@ export function ChecklistTab({ imp, activeCantiere, activeImpresa, updateImpresa
           }
 
           .checklist-row {
-            flex-direction: column;
-            align-items: stretch;
+            flex-wrap: wrap;
+            align-items: flex-start;
+          }
+
+          .checklist-page-ref {
+            width: 100%;
+            max-width: 140px;
           }
 
           .checklist-row-badge {

@@ -68,9 +68,9 @@ export async function POST(request: Request) {
     });
 
     const aiPayload = parseAiJsonResponse(rawText);
-    const updates = buildFinalUpdates(aiPayload);
+    const { updates, mappingWarnings } = buildFinalUpdates(aiPayload);
     const warnings = appendImpresaMismatchWarning(
-      aiPayload.warnings,
+      [...(aiPayload.warnings || []), ...(mappingWarnings || [])],
       aiPayload.extracted_data?.impresa,
       impresaNome
     );
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
     const applied = applyAiUpdates(
       {
         checks: current.checks,
+        checkRefs: current.checkRefs || {},
         allegati: current.allegati,
         allegatiScadenze: current.allegatiScadenze,
         maestranze: current.maestranze,
@@ -96,8 +97,14 @@ export async function POST(request: Request) {
       updates
     );
 
+    const extractedForHistory = {
+      ...(aiPayload.extracted_data || {}),
+      references: aiPayload.references || {},
+    };
+
     await persistImpresaStateAfterAi(supabase, impresaId, {
       checks: applied.checks,
+      checkRefs: applied.checkRefs || {},
       note: current.note,
       allegati: applied.allegati,
       allegatiScadenze: applied.allegatiScadenze,
@@ -111,7 +118,7 @@ export async function POST(request: Request) {
       document_type: aiPayload.document_type,
       confidence: aiPayload.confidence,
       summary: aiPayload.summary,
-      extracted_data: aiPayload.extracted_data,
+      extracted_data: extractedForHistory,
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,
       warnings,
@@ -128,6 +135,7 @@ export async function POST(request: Request) {
       warnings,
       state: {
         checks: applied.checks,
+        checkRefs: applied.checkRefs || {},
         allegati: applied.allegati,
         allegatiScadenze: applied.allegatiScadenze,
         maestranze: applied.maestranze,

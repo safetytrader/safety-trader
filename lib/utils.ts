@@ -148,6 +148,7 @@ export const mkImpresa = () => ({
   nome: "",
   attivita: "",
   checks: {},
+  checkRefs: {},
   allegati: {},
   allegatiScadenze: {},
   note: "",

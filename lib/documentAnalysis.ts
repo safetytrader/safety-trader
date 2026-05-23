@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { ALLEGATI_CONFIG } from "@/lib/constants";
+import { ALLEGATI_CONFIG, CHECKLIST_ITEMS } from "@/lib/constants";
 import { deduplicateWorkers, nameSimilarity } from "@/lib/utils";
 
 /** Chiavi allegati nel DB app (testo completo) */
@@ -8,6 +8,33 @@ export const ALLEGATI_KEY_MAP = {
   visura: "Visura Camerale (CC.I.AA.)",
   pos: null,
 };
+
+/** Checklist non aggiornata automaticamente da documento POS */
+export const POS_CHECKLIST_EXCLUDED_IDS = ["g2", "l1", "l2", "l3", "l4"];
+
+export const POS_CHECKLIST_MIN_CONFIDENCE = 0.65;
+
+export const POS_LOW_CONFIDENCE_WARNING =
+  "Documento riconosciuto come POS con bassa confidenza: aggiornamenti non applicati automaticamente.";
+
+function applyPosChecklistMapping(updates, confidence = 0) {
+  const warnings = [];
+  if (confidence < POS_CHECKLIST_MIN_CONFIDENCE) {
+    warnings.push(POS_LOW_CONFIDENCE_WARNING);
+    return warnings;
+  }
+
+  for (const item of CHECKLIST_ITEMS) {
+    if (POS_CHECKLIST_EXCLUDED_IDS.includes(item.id)) continue;
+    updates.checklist[item.id] = "si";
+  }
+
+  if (resolveAllegatoKey("pos")) {
+    updates.allegati.pos = true;
+  }
+
+  return warnings;
+}
 
 export const AI_STATUS = {
   DA_ANALIZZARE: "da_analizzare",
@@ -168,6 +195,25 @@ export function parseAiJsonResponse(text) {
   return normalizeAiPayload(parsed);
 }
 
+export function formatCheckRef(ref) {
+  if (ref == null) return null;
+  if (typeof ref === "string") {
+    const t = ref.trim();
+    if (!t) return null;
+    if (/^pag\./i.test(t)) return t;
+    const num = t.replace(/^pag\.?\s*/i, "").trim();
+    return num ? `pag. ${num}` : null;
+  }
+  if (typeof ref === "object") {
+    const page = ref.page;
+    if (page == null || page === "") return null;
+    const pageStr = String(page).trim();
+    if (!pageStr) return null;
+    return /^pag\./i.test(pageStr) ? pageStr : `pag. ${pageStr}`;
+  }
+  return null;
+}
+
 function normalizeAiPayload(raw) {
   return {
     document_type: raw?.document_type || "ALTRO",
@@ -187,12 +233,42 @@ function normalizeAiPayload(raw) {
     },
     updates: {
       checklist: raw?.updates?.checklist || {},
+      checkRefs: raw?.updates?.checkRefs || raw?.checkRefs || {},
       allegati: raw?.updates?.allegati || {},
       allegatiScadenze: raw?.updates?.allegatiScadenze || {},
       maestranze: Array.isArray(raw?.updates?.maestranze) ? raw.updates.maestranze : [],
     },
+    references: raw?.references || { checklist: {} },
     warnings: Array.isArray(raw?.warnings) ? raw.warnings : [],
   };
+}
+
+function enrichCheckRefsFromReferences(updates, references = {}, explicitCheckRefs = {}) {
+  const checkRefs = { ...(updates.checkRefs || {}), ...explicitCheckRefs };
+  const refMap = references?.checklist || {};
+
+  for (const [key, val] of Object.entries(updates.checklist || {})) {
+    if (val !== "si") continue;
+    if (!isFieldEmpty(checkRefs[key])) continue;
+    const formatted = formatCheckRef(refMap[key]) || formatCheckRef(explicitCheckRefs[key]);
+    if (formatted) checkRefs[key] = formatted;
+  }
+
+  for (const [key, refVal] of Object.entries(refMap)) {
+    if (!isFieldEmpty(checkRefs[key])) continue;
+    const formatted = formatCheckRef(refVal);
+    if (formatted && updates.checklist?.[key] === "si") {
+      checkRefs[key] = formatted;
+    }
+  }
+
+  for (const [key, refVal] of Object.entries(explicitCheckRefs)) {
+    if (!isFieldEmpty(checkRefs[key])) continue;
+    const formatted = formatCheckRef(refVal);
+    if (formatted) checkRefs[key] = formatted;
+  }
+
+  return { ...updates, checkRefs };
 }
 
 function workerFromExtracted(extracted, fields = {}) {
@@ -207,18 +283,21 @@ function workerFromExtracted(extracted, fields = {}) {
 /**
  * Mapping deterministico da tipo documento + extracted_data → updates
  */
-export function mapExtractedToUpdates(documentType, extracted = {}) {
+export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
   const type = (documentType || "ALTRO").toUpperCase();
   const updates = {
     checklist: {},
+    checkRefs: {},
     allegati: {},
     allegatiScadenze: {},
     maestranze: [],
   };
+  const mappingWarnings = [];
 
   const scadenza = formatIsoDateToApp(extracted.data_scadenza);
   const erogazione = formatIsoDateToApp(extracted.data_erogazione || extracted.data_emissione);
   const fineContratto = formatIsoDateToApp(extracted.data_fine_contratto);
+  const confidence = typeof meta.confidence === "number" ? meta.confidence : 0;
 
   switch (type) {
     case "DURC":
@@ -227,8 +306,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}) {
       if (scadenza) updates.allegatiScadenze.durc = scadenza;
       break;
     case "POS":
-      updates.checklist.pos = "si";
-      if (resolveAllegatoKey("pos")) updates.allegati.pos = true;
+      mappingWarnings.push(...applyPosChecklistMapping(updates, confidence));
       break;
     case "VISURA":
       updates.checklist.visura = "si";
@@ -301,7 +379,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}) {
       break;
   }
 
-  return updates;
+  return { updates, mappingWarnings };
 }
 
 export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
@@ -312,6 +390,7 @@ export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
 
   return {
     checklist: { ...mappedUpdates.checklist, ...aiUpdates.checklist },
+    checkRefs: { ...mappedUpdates.checkRefs, ...aiUpdates.checkRefs },
     allegati: { ...mappedUpdates.allegati, ...aiUpdates.allegati },
     allegatiScadenze: { ...mappedUpdates.allegatiScadenze, ...aiUpdates.allegatiScadenze },
     maestranze: deduplicateWorkers([], maestranze),
@@ -319,11 +398,22 @@ export function mergeAiUpdates(aiUpdates = {}, mappedUpdates = {}) {
 }
 
 export function buildFinalUpdates(aiPayload) {
-  const mapped = mapExtractedToUpdates(
+  const { updates: mapped, mappingWarnings } = mapExtractedToUpdates(
     aiPayload.document_type,
-    aiPayload.extracted_data || {}
+    aiPayload.extracted_data || {},
+    { confidence: aiPayload.confidence ?? 0 }
   );
-  return mergeAiUpdates(aiPayload.updates || {}, mapped);
+  const merged = mergeAiUpdates(aiPayload.updates || {}, mapped);
+  const updates = enrichCheckRefsFromReferences(
+    merged,
+    aiPayload.references || {},
+    merged.checkRefs || {}
+  );
+  return {
+    updates,
+    mappingWarnings,
+    references: aiPayload.references || {},
+  };
 }
 
 export function detectDocumentType(fileName = "") {
@@ -376,6 +466,7 @@ export function buildMockAnalysis({ fileName, documentType, extractedOverrides =
   const oggi = addDays(0);
   const updates = {
     checklist: {},
+    checkRefs: {},
     allegati: {},
     allegatiScadenze: {},
     maestranze: [],
@@ -395,8 +486,7 @@ export function buildMockAnalysis({ fileName, documentType, extractedOverrides =
       extracted_data.data_scadenza = scadenza;
       break;
     case "POS":
-      updates.checklist.pos = "si";
-      if (resolveAllegatoKey("pos")) updates.allegati.pos = true;
+      warnings.push(...applyPosChecklistMapping(updates, 0.88));
       break;
     case "VISURA":
       updates.checklist.visura = "si";
@@ -486,6 +576,7 @@ function recordSkipped(skipped, section, key, existing, proposed) {
  */
 export function applyAiUpdates(current = {}, updates = {}) {
   const checks = { ...(current.checks || {}) };
+  const checkRefs = { ...(current.checkRefs || {}) };
   const allegati = { ...(current.allegati || {}) };
   const allegatiScadenze = { ...(current.allegatiScadenze || {}) };
   let maestranze = [...(current.maestranze || [])];
@@ -500,6 +591,17 @@ export function applyAiUpdates(current = {}, updates = {}) {
       recordApplied(applied_changes, "checklist", key, value);
     } else {
       recordSkipped(skipped_changes, "checklist", key, checks[key], value);
+    }
+  }
+
+  for (const [key, value] of Object.entries(updates.checkRefs || {})) {
+    const formatted = formatCheckRef(value);
+    if (!formatted) continue;
+    if (isFieldEmpty(checkRefs[key])) {
+      checkRefs[key] = formatted;
+      recordApplied(applied_changes, "checkRefs", key, formatted);
+    } else {
+      recordSkipped(skipped_changes, "checkRefs", key, checkRefs[key], formatted);
     }
   }
 
@@ -575,6 +677,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
 
   return {
     checks,
+    checkRefs,
     allegati,
     allegatiScadenze,
     maestranze,
@@ -587,6 +690,9 @@ export function formatAppliedSummary(applied_changes = {}) {
   const lines = [];
   for (const [k, v] of Object.entries(applied_changes.checklist || {})) {
     lines.push(`Checklist: ${k} → ${v}`);
+  }
+  for (const [k, v] of Object.entries(applied_changes.checkRefs || {})) {
+    lines.push(`Rif. pag. ${k}: ${v}`);
   }
   for (const [k] of Object.entries(applied_changes.allegati || {})) {
     lines.push(`Allegato presente: ${k}`);
@@ -605,6 +711,9 @@ export function formatSkippedSummary(skipped_changes = {}) {
   const lines = [];
   for (const [k, v] of Object.entries(skipped_changes.checklist || {})) {
     lines.push(`Checklist ${k}: già "${v.existing}"`);
+  }
+  for (const [k, v] of Object.entries(skipped_changes.checkRefs || {})) {
+    lines.push(`Rif. pag. ${k}: già "${v.existing}"`);
   }
   for (const [k, v] of Object.entries(skipped_changes.allegati || {})) {
     lines.push(`Allegato ${k}: già presente`);

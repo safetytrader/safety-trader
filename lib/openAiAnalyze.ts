@@ -9,6 +9,7 @@ Estrai date in formato YYYY-MM-DD se possibile.
 Per documenti di formazione o idoneità estrai nominativo lavoratore, mansione/corso, data erogazione o scadenza.
 Restituisci confidence da 0 a 1.
 Non valutare giuridicamente il documento: limita l'output ai dati estraibili.
+Per ogni voce checklist che proponi di aggiornare a SI, indica anche la pagina del documento in cui hai trovato il riferimento. Se non puoi determinare la pagina, restituisci null. Non inventare riferimenti pagina.
 
 Schema JSON obbligatorio:
 {
@@ -29,9 +30,18 @@ Schema JSON obbligatorio:
   },
   "updates": {
     "checklist": {},
+    "checkRefs": {},
     "allegati": {},
     "allegatiScadenze": {},
     "maestranze": []
+  },
+  "references": {
+    "checklist": {
+      "id_voce_checklist": {
+        "page": null,
+        "excerpt": null
+      }
+    }
   },
   "warnings": []
 }`;

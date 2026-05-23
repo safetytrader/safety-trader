@@ -58,6 +58,8 @@ export type Impresa = {
   nome: string;
   attivita: string;
   checks: ChecksMap;
+  /** Riferimenti pagina per voce checklist, es. { a1: "pag. 3" } */
+  checkRefs?: Record<string, string>;
   allegati: AllegatiMap;
   /** Da `scadenzaAllegati` nel JSON di estrazione, unito con spread */
   allegatiScadenze: Record<string, string>;

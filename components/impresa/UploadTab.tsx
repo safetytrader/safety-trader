@@ -121,6 +121,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       if (data.state) {
         updateImpresa(activeCantiere, activeImpresa, {
           checks: data.state.checks,
+          checkRefs: data.state.checkRefs || {},
           allegati: data.state.allegati,
           allegatiScadenze: data.state.allegatiScadenze,
           maestranze: data.state.maestranze,
@@ -264,6 +265,9 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
               <div className="upload-status-card" role="status">
                 <span className="upload-spinner" />
                 <span className="upload-status-text">Analisi in corso…</span>
+                <span className="upload-status-hint">
+                  L&apos;analisi può richiedere alcuni minuti.
+                </span>
               </div>
             ) : null}
 
@@ -507,9 +511,10 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
 
         .upload-status-card {
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 10px;
+          gap: 6px;
           padding: 14px 16px;
           border-radius: 14px;
           border: 1px solid #ddd6fe;
@@ -520,6 +525,12 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
           font-size: 14px;
           font-weight: 700;
           color: #5b21b6;
+        }
+
+        .upload-status-hint {
+          font-size: 12px;
+          font-weight: 600;
+          color: #7c3aed;
         }
 
         .upload-spinner {
