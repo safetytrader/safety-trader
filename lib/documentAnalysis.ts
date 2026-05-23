@@ -375,10 +375,81 @@ function normalizeExtractedData(raw = {}) {
     data_erogazione: raw.data_erogazione ?? null,
     data_scadenza: raw.data_scadenza ?? null,
     data_fine_contratto: raw.data_fine_contratto ?? null,
+    data_inizio_rapporto: raw.data_inizio_rapporto ?? null,
+    data_proroga: raw.data_proroga ?? null,
     ente: raw.ente ?? null,
     corso: raw.corso ?? null,
     tipo_contratto: raw.tipo_contratto ?? null,
+    tipo_comunicazione: raw.tipo_comunicazione ?? null,
   };
+}
+
+/** Normalizza una data in YYYY-MM-DD se possibile. */
+function normalizeIsoDateOnly(value) {
+  if (value == null || value === "") return null;
+  const t = String(value).trim();
+  if (!t) return null;
+
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const slash = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) {
+    const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${year}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+/**
+ * Valore campo UNILAV per maestranza: "IND" o data fine/scadenza (YYYY-MM-DD).
+ */
+export function resolveUnilavFromExtracted(extracted = {}, mappingWarnings = []) {
+  const tipoContratto = safeLower(extracted.tipo_contratto || "");
+  const tipoComunicazione = safeLower(extracted.tipo_comunicazione || "");
+
+  const dataFine = normalizeIsoDateOnly(extracted.data_fine_contratto);
+  const dataScadenza = normalizeIsoDateOnly(extracted.data_scadenza);
+  const dataProroga = normalizeIsoDateOnly(extracted.data_proroga);
+
+  const isProroga =
+    /proroga/.test(tipoComunicazione) ||
+    /proroga/.test(tipoContratto) ||
+    /comunicazione\s+obbligatoria\s+di\s+proroga/.test(tipoComunicazione);
+
+  const isIndeterminato = /indeterminat/.test(tipoContratto);
+  const isDeterminato = /determinato/.test(tipoContratto) && !isIndeterminato;
+
+  const hasEndDate = Boolean(dataFine || dataScadenza || dataProroga);
+
+  if (hasEndDate) {
+    if (isProroga) {
+      return dataProroga || dataScadenza || dataFine;
+    }
+    return dataFine || dataScadenza || dataProroga;
+  }
+
+  if (isDeterminato) {
+    mappingWarnings.push(
+      "UNILAV: rapporto a tempo determinato senza data di fine/scadenza/proroga rilevata."
+    );
+    return null;
+  }
+
+  if (isIndeterminato) {
+    return "IND";
+  }
+
+  if (!tipoContratto.trim()) {
+    mappingWarnings.push("UNILAV: tipo contratto non chiaro; campo UNILAV non aggiornato.");
+    return null;
+  }
+
+  mappingWarnings.push(
+    "UNILAV: impossibile determinare scadenza o indeterminato; campo non aggiornato."
+  );
+  return null;
 }
 
 function normalizeAiPayload(raw) {
@@ -466,9 +537,11 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "UNILAV": {
-      const unilav = fineContratto || (extracted.data_fine_contratto == null ? "IND" : null);
-      const w = workerFromExtracted(extracted, unilav ? { unilav } : { unilav: "IND" });
-      if (w) updates.maestranze.push(w);
+      const w = workerFromExtracted(extracted);
+      if (!w) break;
+      const unilav = resolveUnilavFromExtracted(extracted, mappingWarnings);
+      if (unilav) w.unilav = unilav;
+      updates.maestranze.push(w);
       break;
     }
     case "PREPOSTO": {
