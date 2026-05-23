@@ -121,6 +121,33 @@ export function getDeadlineStatus(value) {
   return "valid";
 }
 
+/** Solo visualizzazione tabella: DD/MM/YYYY (non modifica il valore salvato). */
+export function formatDateIT(value) {
+  if (value == null || value === undefined) return "—";
+  const t = String(value).trim();
+  if (!t || t === "✓") return "—";
+  if (t === "—") return "—";
+  if (t.toUpperCase() === "IND") return "IND";
+
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const day = String(parseInt(iso[3], 10)).padStart(2, "0");
+    const month = String(parseInt(iso[2], 10)).padStart(2, "0");
+    const year = iso[1];
+    return `${day}/${month}/${year}`;
+  }
+
+  const slash = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (slash) {
+    const day = String(parseInt(slash[1], 10)).padStart(2, "0");
+    const month = String(parseInt(slash[2], 10)).padStart(2, "0");
+    const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${day}/${month}/${year}`;
+  }
+
+  return t;
+}
+
 function DeadlineBadge({ status, children }) {
   const tone = DEADLINE_BADGE_STYLE[status] || DEADLINE_BADGE_STYLE.empty;
   return (
@@ -132,12 +159,12 @@ function DeadlineBadge({ status, children }) {
 
 export function renderDeadlineCell(value) {
   const status = getDeadlineStatus(value);
+  const label = formatDateIT(value);
 
   if (status === "empty") {
     return <DeadlineBadge status="empty">—</DeadlineBadge>;
   }
 
-  const label = String(value).trim();
   return <DeadlineBadge status={status}>{label}</DeadlineBadge>;
 }
 
