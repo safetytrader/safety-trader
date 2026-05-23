@@ -1,4 +1,5 @@
 import {
+  appendImpresaMismatchWarning,
   buildFinalUpdates,
   parseAiJsonResponse,
 } from "@/lib/documentAnalysis";
@@ -14,6 +15,7 @@ type AnalyzeBody = {
   cantiere_id?: string;
   file_name?: string;
   file_type?: string;
+  impresa_nome?: string;
 };
 
 async function loadDocumentFile(
@@ -100,6 +102,11 @@ export async function POST(request: Request) {
 
     const aiPayload = parseAiJsonResponse(rawText);
     const updates = buildFinalUpdates(aiPayload);
+    const warnings = appendImpresaMismatchWarning(
+      aiPayload.warnings,
+      aiPayload.extracted_data?.impresa,
+      body.impresa_nome
+    );
 
     return Response.json({
       ok: true,
@@ -108,7 +115,7 @@ export async function POST(request: Request) {
       summary: aiPayload.summary,
       extracted_data: aiPayload.extracted_data,
       updates,
-      warnings: aiPayload.warnings,
+      warnings,
     });
   } catch (error: unknown) {
     const message = mapOpenAiError(error, hasApiKey);

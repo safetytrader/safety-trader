@@ -54,6 +54,82 @@ export function isChecklistEmpty(value) {
   return t === "" || t === "n.a." || t === "na" || t === "n/a";
 }
 
+export const IMPRESA_MISMATCH_WARNING =
+  "L'impresa rilevata nel documento non coincide con l'impresa selezionata.";
+
+const IMPRESA_STOPWORDS = new Set([
+  "di",
+  "del",
+  "della",
+  "dei",
+  "degli",
+  "delle",
+  "e",
+  "il",
+  "la",
+  "le",
+  "lo",
+  "gli",
+  "un",
+  "una",
+  "srl",
+  "srls",
+  "spa",
+  "sas",
+  "snc",
+  "ss",
+]);
+
+function normalizeImpresaName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\./g, "")
+    .replace(/[,;'"()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function impresaTokens(name) {
+  const normalized = normalizeImpresaName(name);
+  return normalized
+    .split(/\s+/)
+    .map(t => t.replace(/[^a-z0-9]/g, ""))
+    .filter(t => t.length >= 2 && !IMPRESA_STOPWORDS.has(t));
+}
+
+/** Confronto tollerante tra impresa selezionata e nome estratto dal documento */
+export function impresaNamesReasonablyMatch(selectedName, extractedName) {
+  const selected = String(selectedName || "").trim();
+  const extracted = String(extractedName || "").trim();
+  if (!extracted) return true;
+  if (!selected) return true;
+
+  const a = normalizeImpresaName(selected);
+  const b = normalizeImpresaName(extracted);
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+
+  const tokA = impresaTokens(selected);
+  const tokB = impresaTokens(extracted);
+  if (!tokA.length || !tokB.length) return true;
+
+  const setB = new Set(tokB);
+  const common = tokA.filter(t => setB.has(t)).length;
+  const smaller = Math.min(tokA.length, tokB.length);
+  return common / smaller >= 0.6;
+}
+
+export function appendImpresaMismatchWarning(warnings, extractedImpresa, selectedImpresa) {
+  const list = Array.isArray(warnings) ? [...warnings] : [];
+  const extracted = String(extractedImpresa || "").trim();
+  if (!extracted) return list;
+  if (impresaNamesReasonablyMatch(selectedImpresa, extracted)) return list;
+  if (!list.includes(IMPRESA_MISMATCH_WARNING)) list.push(IMPRESA_MISMATCH_WARNING);
+  return list;
+}
+
 /** Converte YYYY-MM-DD in dd/mm/yy per l'app */
 export function formatIsoDateToApp(iso) {
   if (!iso || typeof iso !== "string") return null;

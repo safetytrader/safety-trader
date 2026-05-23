@@ -380,6 +380,7 @@ export default function App() {
             cantiere_id: cid,
             file_name: file.name,
             file_type: file.type,
+            impresa_nome: imp.nome,
           }),
         });
 

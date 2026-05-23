@@ -19,6 +19,59 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const EXTRACTED_FIELD_LABELS = {
+  impresa: "Impresa",
+  lavoratore: "Lavoratore",
+  codice_fiscale: "Codice fiscale",
+  mansione: "Mansione",
+  data_emissione: "Data emissione",
+  data_erogazione: "Data erogazione",
+  data_scadenza: "Data scadenza",
+  data_fine_contratto: "Data fine contratto",
+  ente: "Ente",
+  corso: "Corso",
+};
+
+function isExtractedValueVisible(value) {
+  if (value == null || value === undefined) return false;
+  if (typeof value === "string") {
+    const t = value.trim();
+    return t !== "" && t !== "—" && t.toLowerCase() !== "null";
+  }
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return !Number.isNaN(value);
+  return true;
+}
+
+function normalizeExtractedKey(key) {
+  if (key === "data_regozione") return "data_erogazione";
+  return key;
+}
+
+function getVisibleExtractedEntries(extractedData) {
+  if (!extractedData || typeof extractedData !== "object") return [];
+
+  const entries = [];
+  const seen = new Set();
+
+  for (const [rawKey, value] of Object.entries(extractedData)) {
+    if (!isExtractedValueVisible(value)) continue;
+
+    const key = normalizeExtractedKey(rawKey);
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    entries.push([key, value]);
+  }
+
+  return entries;
+}
+
+function formatExtractedLabel(key) {
+  const normalized = normalizeExtractedKey(key);
+  return EXTRACTED_FIELD_LABELS[normalized] || normalized.replace(/_/g, " ");
+}
+
 function fileStatusBadge(f) {
   const stato = normalizeAiStatus(f.statoAnalisi);
   const label = aiStatusLabel(stato);
@@ -293,14 +346,13 @@ export function UploadTab({
             {aiAnalysisModal.summary ? (
               <p className="upload-ai-modal-muted">{aiAnalysisModal.summary}</p>
             ) : null}
-            {aiAnalysisModal.extracted_data &&
-            Object.keys(aiAnalysisModal.extracted_data).length > 0 ? (
+            {getVisibleExtractedEntries(aiAnalysisModal.extracted_data).length > 0 ? (
               <div>
                 <p className="upload-ai-modal-section">Dati estratti principali</p>
                 <ul className="upload-ai-modal-list">
-                  {Object.entries(aiAnalysisModal.extracted_data).map(([k, v]) => (
+                  {getVisibleExtractedEntries(aiAnalysisModal.extracted_data).map(([k, v]) => (
                     <li key={k}>
-                      {k}: {String(v)}
+                      {formatExtractedLabel(k)}: {String(v)}
                     </li>
                   ))}
                 </ul>
