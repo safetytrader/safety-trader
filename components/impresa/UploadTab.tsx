@@ -202,6 +202,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         is_pos: isPos,
         pos_refs_status: data.pos_refs_status,
         pos_refs_source: data.pos_refs_source,
+        pos_refs_no_text: Boolean(data.pos_refs_no_text),
         pos_references_found: data.pos_references_found ?? 0,
       });
     } catch (err) {
@@ -390,12 +391,11 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                       <strong>Checklist aggiornata</strong>
                     </p>
                     <p className="upload-ai-modal-muted">
-                      {resultModal.pos_refs_status === "found" &&
-                      resultModal.pos_references_found > 0
+                      {resultModal.pos_references_found > 0
                         ? `Riferimenti pagina rilevati: ${resultModal.pos_references_found}`
-                        : resultModal.pos_refs_status === "failed"
-                          ? "Checklist aggiornata. Riferimenti pagina non rilevati."
-                          : "Riferimenti pagina non disponibili"}
+                        : resultModal.pos_refs_no_text
+                          ? "Riferimenti pagina non rilevabili: PDF scansionato o testo non estraibile."
+                          : "Nessun riferimento pagina trovato con ricerca automatica nel documento."}
                     </p>
                   </div>
                 ) : null}

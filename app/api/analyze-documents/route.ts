@@ -6,7 +6,7 @@ import {
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
-import { extractPosPageReferences } from "@/lib/posPageReferences";
+import { extractDeterministicPosReferences } from "@/lib/posReferences";
 import {
   assertUserOwnsTempPath,
   downloadAiTempFile,
@@ -348,22 +348,32 @@ export async function POST(request: Request) {
 
     let posReferencesFound = 0;
     let posReferencesSkipped = 0;
-    let posRefsSource: "extracted_pages" | "temp_pdf" | "unavailable" | "not_applicable" =
-      "not_applicable";
+    let posRefsSource:
+      | "deterministic"
+      | "page_text"
+      | "unavailable"
+      | "not_applicable" = "not_applicable";
+    let posRefsNoText = false;
     let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
       "not_applicable";
 
     if (!built.isNomina && isPosDocumentType(documentType)) {
-      const posRefs = await extractPosPageReferences({
-        fileName,
-        mimeType,
+      if (!refsBuffer?.length && !clientPageTexts?.length && jsonTemporaryStoragePath) {
+        console.warn(
+          "[POS refs] temporaryStoragePath presente ma PDF non scaricato e senza extractedPages"
+        );
+      }
+
+      const posRefs = await extractDeterministicPosReferences({
         buffer: refsBuffer,
         pageTexts: clientPageTexts,
-        hasTemporaryStoragePath: Boolean(jsonTemporaryStoragePath),
         posChecks: applied.checks,
       });
 
       posRefsSource = posRefs.source;
+      posRefsNoText = posRefs.noText;
+      console.log("[AI] POS references source", posRefsSource);
+      console.log("[AI] POS references applied", posRefs.referencesFound);
 
       warnings.push(...posRefs.warnings);
       posReferencesSkipped = Math.max(
@@ -403,8 +413,8 @@ export async function POST(request: Request) {
 
       posReferencesFound = refAppliedCount;
 
-      if (posRefs.failed) {
-        posRefsStatus = "failed";
+      if (posRefs.noText) {
+        posRefsStatus = "unavailable";
       } else if (posReferencesFound > 0) {
         posRefsStatus = "found";
       } else {
@@ -456,6 +466,7 @@ export async function POST(request: Request) {
       pos_references_found: posReferencesFound,
       pos_refs_status: posRefsStatus,
       pos_refs_source: posRefsSource,
+      pos_refs_no_text: posRefsNoText,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,
