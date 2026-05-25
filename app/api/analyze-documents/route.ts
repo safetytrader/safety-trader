@@ -7,6 +7,7 @@ import {
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
 import {
+  applyPosPageReferences,
   extractDeterministicPosReferences,
   stripErroneousBulkPageOneRefs,
 } from "@/lib/posReferences";
@@ -394,30 +395,22 @@ export async function POST(request: Request) {
 
       let refAppliedCount = 0;
       if (Object.keys(posRefs.checkRefs).length) {
-        const refApplied = applyAiUpdates(
-          {
-            checks: applied.checks,
-            checkRefs: applied.checkRefs,
-            allegati: applied.allegati,
-            allegatiScadenze: applied.allegatiScadenze,
-            maestranze: applied.maestranze,
-          },
-          { checkRefs: posRefs.checkRefs }
+        const posMerge = applyPosPageReferences(
+          applied.checkRefs,
+          posRefs.checkRefs
         );
-        const refChanges = refApplied.applied_changes as Record<
-          string,
-          Record<string, unknown>
-        >;
-        refAppliedCount = Object.keys(refChanges.checkRefs || {}).length;
+        refAppliedCount = posMerge.count;
+        const posAppliedChanges: Record<string, Record<string, unknown>> = {};
+        for (const [key, value] of Object.entries(posMerge.applied)) {
+          if (!posAppliedChanges.checkRefs) posAppliedChanges.checkRefs = {};
+          posAppliedChanges.checkRefs[key] = value;
+        }
         applied = {
-          ...refApplied,
+          ...applied,
+          checkRefs: posMerge.checkRefs,
           applied_changes: mergeAppliedChanges(
             applied.applied_changes,
-            refApplied.applied_changes
-          ),
-          skipped_changes: mergeSkippedChanges(
-            applied.skipped_changes,
-            refApplied.skipped_changes
+            posAppliedChanges
           ),
         };
       }
