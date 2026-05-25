@@ -10,8 +10,8 @@ import { extractPosPageReferences } from "@/lib/posPageReferences";
 import {
   assertUserOwnsTempPath,
   downloadAiTempFile,
+  formatTempDownloadError,
   removeAiTempFile,
-  TEMP_DOWNLOAD_FAILED_MSG,
 } from "@/lib/aiTempStorage";
 import { MAX_DIRECT_FILE_BYTES } from "@/lib/analyzePayloadLimits";
 import {
@@ -265,9 +265,9 @@ export async function POST(request: Request) {
         const msg =
           pathErr instanceof Error && pathErr.message.includes("non valido")
             ? pathErr.message
-            : TEMP_DOWNLOAD_FAILED_MSG;
+            : formatTempDownloadError(pathErr instanceof Error ? pathErr.message : undefined);
         if (routeMode === "TEMP_STORAGE_FILE") {
-          return jsonError(msg, 403);
+          return jsonError(formatTempDownloadError(msg), 403);
         }
         console.warn("[AI] temp pdf load failed (fast analysis continues)", msg);
       }
@@ -295,7 +295,7 @@ export async function POST(request: Request) {
       analysisMode = result.analysisMode;
       rawAiResponse = result.rawAiResponse;
     } else {
-      return jsonError(TEMP_DOWNLOAD_FAILED_MSG, 422);
+      return jsonError(formatTempDownloadError("buffer non disponibile"), 422);
     }
 
     console.log("[AI] analysisMode", analysisMode);

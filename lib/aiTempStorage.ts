@@ -3,10 +3,24 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const AI_TEMP_BUCKET = "ai-temp";
 
-export const TEMP_UPLOAD_FAILED_MSG =
-  "Impossibile caricare temporaneamente il documento.";
-export const TEMP_DOWNLOAD_FAILED_MSG =
-  "Impossibile leggere il documento temporaneo.";
+export const TEMP_AUTH_REQUIRED_MSG =
+  "Utente non autenticato. Effettua nuovamente il login.";
+
+export function formatTempUploadError(supabaseMessage?: string) {
+  const detail = String(supabaseMessage || "").trim();
+  if (!detail) {
+    return "Impossibile caricare temporaneamente il documento.";
+  }
+  return `Impossibile caricare temporaneamente il documento: ${detail}`;
+}
+
+export function formatTempDownloadError(supabaseMessage?: string) {
+  const detail = String(supabaseMessage || "").trim();
+  if (!detail) {
+    return "Impossibile leggere il documento temporaneo.";
+  }
+  return `Impossibile leggere il documento temporaneo: ${detail}`;
+}
 
 export function buildAiTempStoragePath(
   userId: string,
@@ -38,22 +52,71 @@ export function assertUserOwnsTempPath(storagePath: string, userId: string) {
   return normalized;
 }
 
+async function resolveAuthenticatedUserId() {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    console.error("[AI] temp upload session error", sessionError.message);
+    throw new Error(TEMP_AUTH_REQUIRED_MSG);
+  }
+
+  const userId = session?.user?.id;
+  if (!userId) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user?.id) {
+      console.error("[AI] temp upload auth missing", userError?.message);
+      throw new Error(TEMP_AUTH_REQUIRED_MSG);
+    }
+    return userData.user.id;
+  }
+
+  return userId;
+}
+
 export async function uploadFileToAiTemp(
   file: File,
-  userId: string,
+  _userId: string,
   impresaId: string
 ): Promise<string> {
-  const path = buildAiTempStoragePath(userId, impresaId, file.name || "documento.pdf");
+  if (!file) {
+    throw new Error(formatTempUploadError("file mancante"));
+  }
+
+  const impresaKey = String(impresaId || "").trim();
+  if (!impresaKey) {
+    throw new Error(formatTempUploadError("impresaId mancante"));
+  }
+
+  const userId = await resolveAuthenticatedUserId();
+  const path = buildAiTempStoragePath(userId, impresaKey, file.name || "documento.pdf");
+
+  console.log("[AI] temp upload start", {
+    bucket: AI_TEMP_BUCKET,
+    path,
+    fileSize: file.size,
+    fileType: file.type || "application/pdf",
+  });
+
   const { error } = await supabase.storage.from(AI_TEMP_BUCKET).upload(path, file, {
-    contentType: file.type || undefined,
+    cacheControl: "0",
     upsert: false,
+    contentType: file.type || "application/pdf",
   });
 
   if (error) {
-    console.warn("[AI] temp upload failed", error.message);
-    throw new Error(TEMP_UPLOAD_FAILED_MSG);
+    console.error("[AI] temp upload failed", {
+      bucket: AI_TEMP_BUCKET,
+      path,
+      message: error.message,
+      name: error.name,
+    });
+    throw new Error(formatTempUploadError(error.message));
   }
 
+  console.log("[AI] temp upload ok", path);
   return path;
 }
 
@@ -74,14 +137,14 @@ export async function downloadAiTempFile(
   const { data, error } = await client.storage.from(AI_TEMP_BUCKET).download(storagePath);
 
   if (error || !data) {
-    console.warn("[AI] temp download failed", error?.message);
-    throw new Error(TEMP_DOWNLOAD_FAILED_MSG);
+    console.warn("[AI] temp download failed", storagePath, error?.message);
+    throw new Error(formatTempDownloadError(error?.message));
   }
 
   const bytes = await data.arrayBuffer();
   const buffer = Buffer.from(bytes);
   if (!buffer.length) {
-    throw new Error(TEMP_DOWNLOAD_FAILED_MSG);
+    throw new Error(formatTempDownloadError("file vuoto"));
   }
 
   return buffer;

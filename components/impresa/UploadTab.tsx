@@ -137,7 +137,9 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         } = await supabase.auth.getUser();
 
         if (userError || !user) {
-          throw new Error("Sessione non valida. Effettua di nuovo l'accesso.");
+          throw new Error(
+            "Utente non autenticato. Effettua nuovamente il login."
+          );
         }
 
         uploadedTempPath = await uploadFileToAiTemp(file, user.id, ids.impresaId);
