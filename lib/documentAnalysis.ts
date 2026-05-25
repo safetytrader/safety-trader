@@ -180,6 +180,42 @@ export function formatIsoDateToApp(iso) {
   return `${m[3]}/${m[2]}/${m[1].slice(-2)}`;
 }
 
+/** Parser risposta dedicata riferimenti pagina POS. */
+export function parsePosReferencesJsonResponse(text) {
+  let s = String(text || "")
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+  const st = s.indexOf("{");
+  if (st === -1) throw new Error("Risposta riferimenti pagina non valida.");
+  let depth = 0;
+  let end = -1;
+  for (let i = st; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) {
+    s = s.slice(st).replace(/,\s*$/, "");
+    const ob = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+    for (let i = 0; i < ob; i++) s += "}";
+  } else {
+    s = s.slice(st, end + 1);
+  }
+  const parsed = JSON.parse(s);
+  return {
+    checklist_evidence: Array.isArray(parsed?.checklist_evidence)
+      ? parsed.checklist_evidence
+      : [],
+    warnings: Array.isArray(parsed?.warnings) ? parsed.warnings.slice(0, 5) : [],
+  };
+}
+
 export function parseAiJsonResponse(text) {
   let s = String(text || "")
     .replace(/```json\s*/gi, "")

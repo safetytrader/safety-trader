@@ -164,11 +164,15 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       if (data.state) {
         updateImpresa(activeCantiere, activeImpresa, {
           checks: data.state.checks,
+          checkRefs: data.state.checkRefs,
           allegati: data.state.allegati,
           allegatiScadenze: data.state.allegatiScadenze,
           maestranze: data.state.maestranze,
         });
       }
+
+      const isPos =
+        String(data.document_type || "").toUpperCase() === "POS";
 
       setResultModal({
         error: false,
@@ -184,6 +188,9 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         warnings: data.warnings || [],
         analysis_ui: data.analysis_ui || null,
         is_nomina: Boolean(data.is_nomina),
+        is_pos: isPos,
+        pos_refs_status: data.pos_refs_status,
+        pos_references_found: data.pos_references_found ?? 0,
       });
     } catch (err) {
       if (uploadedTempPath) {
@@ -365,6 +372,18 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                   <strong>Tipo documento riconosciuto:</strong>{" "}
                   {resultModal.document_type || "—"}
                 </p>
+                {resultModal.is_pos ? (
+                  <div className="upload-ai-modal-pos">
+                    <p>
+                      <strong>Checklist aggiornata</strong>
+                    </p>
+                    <p className="upload-ai-modal-muted">
+                      {resultModal.pos_refs_status === "found"
+                        ? `Riferimenti pagina rilevati: ${resultModal.pos_references_found}`
+                        : "Riferimenti pagina non disponibili"}
+                    </p>
+                  </div>
+                ) : null}
                 {resultModal.analysis_ui ? (
                   <div className="upload-ai-modal-nomina">
                     <p>

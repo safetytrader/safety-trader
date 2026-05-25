@@ -29,8 +29,10 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
     const line = content.items
       .map(item => ("str" in item ? String(item.str) : ""))
       .join(" ");
-    if (line.trim()) parts.push(line);
+    if (line.trim()) {
+      parts.push(`--- PAGINA ${pageNum} ---\n${line.trim()}`);
+    }
   }
 
-  return parts.join("\n");
+  return parts.join("\n\n");
 }

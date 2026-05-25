@@ -6,6 +6,7 @@ import {
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
+import { extractPosPageReferences } from "@/lib/posPageReferences";
 import {
   assertUserOwnsTempPath,
   downloadAiTempFile,
@@ -48,6 +49,34 @@ function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   if (value == null) return "";
   return String(value).trim();
+}
+
+function mergeAppliedChanges(
+  target: Record<string, Record<string, unknown>> = {},
+  source: Record<string, Record<string, unknown>> = {}
+) {
+  const out: Record<string, Record<string, unknown>> = { ...target };
+  for (const [section, values] of Object.entries(source || {})) {
+    if (!values || typeof values !== "object") continue;
+    out[section] = { ...(out[section] || {}), ...values };
+  }
+  return out;
+}
+
+function mergeSkippedChanges(
+  target: Record<string, Record<string, unknown>> = {},
+  source: Record<string, Record<string, unknown>> = {}
+) {
+  const out: Record<string, Record<string, unknown>> = { ...target };
+  for (const [section, values] of Object.entries(source || {})) {
+    if (!values || typeof values !== "object") continue;
+    out[section] = { ...(out[section] || {}), ...values };
+  }
+  return out;
+}
+
+function isPosDocumentType(documentType: string) {
+  return String(documentType || "").trim().toUpperCase() === "POS";
 }
 
 async function runOpenAiOnBuffer(options: {
@@ -271,7 +300,7 @@ export async function POST(request: Request) {
     const current = await loadImpresaStateForAi(supabase, impresaId);
     const preservedCheckRefs = current.checkRefs || {};
 
-    const applied = built.isNomina
+    let applied = built.isNomina
       ? {
           checks: current.checks,
           checkRefs: preservedCheckRefs,
@@ -292,10 +321,58 @@ export async function POST(request: Request) {
           built.updates
         );
 
+    let posReferencesFound = 0;
+    let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
+      "not_applicable";
+
+    if (!built.isNomina && isPosDocumentType(documentType)) {
+      const posRefs = await extractPosPageReferences({
+        fileName,
+        mimeType,
+        buffer,
+        documentText: routeMode === "JSON_TEXT" ? clientExtractedText : "",
+      });
+
+      warnings.push(...posRefs.warnings);
+
+      if (Object.keys(posRefs.checkRefs).length) {
+        const refApplied = applyAiUpdates(
+          {
+            checks: applied.checks,
+            checkRefs: applied.checkRefs,
+            allegati: applied.allegati,
+            allegatiScadenze: applied.allegatiScadenze,
+            maestranze: applied.maestranze,
+          },
+          { checkRefs: posRefs.checkRefs }
+        );
+        applied = {
+          ...refApplied,
+          applied_changes: mergeAppliedChanges(
+            applied.applied_changes,
+            refApplied.applied_changes
+          ),
+          skipped_changes: mergeSkippedChanges(
+            applied.skipped_changes,
+            refApplied.skipped_changes
+          ),
+        };
+      }
+
+      posReferencesFound = posRefs.referencesFound;
+      if (posRefs.failed) {
+        posRefsStatus = "failed";
+      } else if (posReferencesFound > 0) {
+        posRefsStatus = "found";
+      } else {
+        posRefsStatus = "unavailable";
+      }
+    }
+
     console.time("[AI] db");
     await persistImpresaStateAfterAi(supabase, impresaId, {
       checks: applied.checks,
-      checkRefs: preservedCheckRefs,
+      checkRefs: applied.checkRefs,
       note: current.note,
       allegati: applied.allegati,
       allegatiScadenze: applied.allegatiScadenze,
@@ -313,6 +390,7 @@ export async function POST(request: Request) {
         ...(aiPayload.extracted_data || {}),
         analysis_mode: analysisMode,
         route_mode: routeMode,
+        pos_references_found: posReferencesFound,
       },
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,
@@ -331,9 +409,11 @@ export async function POST(request: Request) {
       warnings,
       analysis_ui: built.analysisUi || null,
       is_nomina: Boolean(built.isNomina),
+      pos_references_found: posReferencesFound,
+      pos_refs_status: posRefsStatus,
       state: {
         checks: applied.checks,
-        checkRefs: preservedCheckRefs,
+        checkRefs: applied.checkRefs,
         allegati: applied.allegati,
         allegatiScadenze: applied.allegatiScadenze,
         maestranze: applied.maestranze,

@@ -4,6 +4,13 @@
 export const MIN_USEFUL_TEXT_CHARS = 300;
 export const MAX_AI_TEXT_CHARS = 12000;
 
+const PAGE_MARKER_RE = /---\s*PAGINA\s+\d+\s*---/i;
+
+/** True se il testo include marcatori di pagina (estrazione PDF per pagina). */
+export function documentTextHasPageMarkers(text = "") {
+  return PAGE_MARKER_RE.test(String(text || ""));
+}
+
 function normalizeForMatch(value) {
   return String(value ?? "")
     .toLowerCase()

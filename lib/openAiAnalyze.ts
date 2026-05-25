@@ -1,4 +1,35 @@
 // @ts-nocheck
+import { CHECKLIST_ITEMS } from "@/lib/constants";
+
+const CHECKLIST_IDS_FOR_POS_REFS = CHECKLIST_ITEMS.map(
+  item => `${item.id}: ${item.label}`
+).join("\n");
+
+const POS_PAGE_REFERENCES_PROMPT = `Analizza il POS e individua, per ciascuna voce della checklist, la pagina in cui è presente l'informazione.
+Restituisci SOLO JSON valido, senza testo extra.
+Restituisci solo riferimenti specifici e attendibili.
+Non inventare pagine.
+Non usare la stessa pagina in modo generico per tutte le voci senza excerpt distinti.
+Ogni riferimento deve avere checklist_id (id reale), found, page (numero intero) ed excerpt (testo breve trovato nel documento, minimo 12 caratteri, specifico alla voce).
+Se una voce non è presente nel documento, omettila oppure usa found: false (non verrà applicata).
+Non modificare checks, allegati o maestranze.
+
+Voci checklist valide (usa esattamente checklist_id):
+${CHECKLIST_IDS_FOR_POS_REFS}
+
+Schema:
+{
+  "checklist_evidence": [
+    {
+      "checklist_id": "a1",
+      "found": true,
+      "page": 3,
+      "excerpt": "testo breve trovato nel documento"
+    }
+  ],
+  "warnings": []
+}`;
+
 const AI_SYSTEM_PROMPT = `Analisi documentale veloce per sicurezza cantieri.
 Restituisci SOLO JSON valido, senza testo extra.
 Non inventare dati: se assente usa null.
@@ -80,13 +111,14 @@ Schema:
 }`;
 
 const MAX_OUTPUT_TOKENS = 600;
+const MAX_OUTPUT_TOKENS_POS_REFS = 2200;
 
 function buildHintsLine(hints = []) {
   if (!hints?.length) return "";
   return `Indizi tipo documento (non vincolanti): ${hints.join(", ")}.\n`;
 }
 
-async function callOpenAIResponses(content) {
+async function callOpenAIResponses(content, maxOutputTokens = MAX_OUTPUT_TOKENS) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("Chiave OpenAI non configurata.");
@@ -102,7 +134,7 @@ async function callOpenAIResponses(content) {
     },
     body: JSON.stringify({
       model,
-      max_output_tokens: MAX_OUTPUT_TOKENS,
+      max_output_tokens: maxOutputTokens,
       input: [
         {
           role: "user",
@@ -244,4 +276,61 @@ export async function analyzeDocumentWithOpenAI({
       text: promptText,
     },
   ]);
+}
+
+/** Seconda analisi POS: solo riferimenti pagina checklist (file completo). */
+export async function analyzePosPageReferencesWithOpenAI({
+  base64,
+  mimeType,
+  fileName,
+}: {
+  base64: string;
+  mimeType: string;
+  fileName: string;
+}): Promise<string> {
+  const safeMime = mimeType || "application/pdf";
+  const fileData = `data:${safeMime};base64,${base64}`;
+
+  return callOpenAIResponses(
+    [
+      {
+        type: "input_file",
+        filename: fileName || "documento.pdf",
+        file_data: fileData,
+      },
+      {
+        type: "input_text",
+        text: POS_PAGE_REFERENCES_PROMPT,
+      },
+    ],
+    MAX_OUTPUT_TOKENS_POS_REFS
+  );
+}
+
+/** Seconda analisi POS: riferimenti pagina da testo con marcatori di pagina. */
+export async function analyzePosPageReferencesTextWithOpenAI({
+  fileName,
+  documentText,
+}: {
+  fileName: string;
+  documentText: string;
+}): Promise<string> {
+  const userText = `Nome file: ${fileName || "documento.pdf"}
+
+Testo documento (con marcatori di pagina):
+---
+${documentText}
+---
+
+${POS_PAGE_REFERENCES_PROMPT}`;
+
+  return callOpenAIResponses(
+    [
+      {
+        type: "input_text",
+        text: userText,
+      },
+    ],
+    MAX_OUTPUT_TOKENS_POS_REFS
+  );
 }
