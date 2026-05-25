@@ -6,7 +6,10 @@ import {
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
-import { extractDeterministicPosReferences } from "@/lib/posReferences";
+import {
+  extractDeterministicPosReferences,
+  stripErroneousBulkPageOneRefs,
+} from "@/lib/posReferences";
 import {
   assertUserOwnsTempPath,
   downloadAiTempFile,
@@ -359,6 +362,11 @@ export async function POST(request: Request) {
       "not_applicable";
 
     if (!built.isNomina && isPosDocumentType(documentType)) {
+      applied = {
+        ...applied,
+        checkRefs: stripErroneousBulkPageOneRefs(applied.checkRefs),
+      };
+
       if (!refsBuffer?.length && !clientPageTexts?.length && jsonTemporaryStoragePath) {
         console.warn(
           "[POS refs] temporaryStoragePath presente ma PDF non scaricato e senza extractedPages"
