@@ -8,7 +8,11 @@ import {
   formatAppliedSummary,
   formatSkippedSummary,
 } from "@/lib/documentAnalysis";
-import { prepareAnalyzeRequest } from "@/lib/prepareAnalyzeRequest";
+import { AI_TEMP_BUCKET, uploadFileToAiTemp } from "@/lib/aiTempStorage";
+import {
+  buildAnalyzeFetchPayload,
+  planAnalyzeRequest,
+} from "@/lib/prepareAnalyzeRequest";
 
 const EXTRACTED_FIELD_LABELS = {
   impresa: "Impresa",
@@ -85,6 +89,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [statusPhase, setStatusPhase] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
   const [resultModal, setResultModal] = useState(null);
@@ -93,9 +98,12 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
     if (!file || analyzing) return;
 
     setAnalyzing(true);
+    setStatusPhase("analyzing");
     setErrorMessage("");
     setPendingFile(file);
     setResultModal(null);
+
+    let uploadedTempPath = null;
 
     try {
       const {
@@ -106,15 +114,40 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         ? { Authorization: `Bearer ${session.access_token}` }
         : {};
 
-      const payload = await prepareAnalyzeRequest(
+      const ids = {
+        impresaId: String(activeImpresa),
+        cantiereId: String(activeCantiere),
+        impresaNome: imp.nome || "",
+      };
+
+      const plan = await planAnalyzeRequest(file, ids);
+      let temporaryStoragePath;
+
+      if (plan.mode === "TEMP_STORAGE") {
+        setStatusPhase("preparing");
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          throw new Error("Sessione non valida. Effettua di nuovo l'accesso.");
+        }
+
+        uploadedTempPath = await uploadFileToAiTemp(file, user.id, ids.impresaId);
+        temporaryStoragePath = uploadedTempPath;
+        setStatusPhase("analyzing");
+      }
+
+      const payload = buildAnalyzeFetchPayload(
+        plan,
         file,
-        {
-          impresaId: String(activeImpresa),
-          cantiereId: String(activeCantiere),
-          impresaNome: imp.nome || "",
-        },
-        authHeaders
+        ids,
+        authHeaders,
+        temporaryStoragePath
       );
+
+      setStatusPhase("analyzing");
 
       const res = await fetch("/api/analyze-documents", {
         method: "POST",
@@ -153,6 +186,14 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         is_nomina: Boolean(data.is_nomina),
       });
     } catch (err) {
+      if (uploadedTempPath) {
+        try {
+          await supabase.storage.from(AI_TEMP_BUCKET).remove([uploadedTempPath]);
+        } catch (cleanupErr) {
+          console.warn("UploadTab: cleanup temp file failed", cleanupErr);
+        }
+      }
+
       const message = err?.message || "Analisi AI non disponibile. Riprova tra poco.";
       setErrorMessage(message);
       setResultModal({
@@ -166,6 +207,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       });
     } finally {
       setAnalyzing(false);
+      setStatusPhase("idle");
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -279,9 +321,15 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
             {analyzing ? (
               <div className="upload-status-card" role="status">
                 <span className="upload-spinner" />
-                <span className="upload-status-text">Analisi in corso…</span>
+                <span className="upload-status-text">
+                  {statusPhase === "preparing"
+                    ? "Preparazione documento…"
+                    : "Analisi in corso…"}
+                </span>
                 <span className="upload-status-hint">
-                  Sto leggendo il documento e aggiornando i dati disponibili.
+                  {statusPhase === "preparing"
+                    ? "Caricamento temporaneo per l'analisi AI (non viene archiviato)."
+                    : "Sto leggendo il documento e aggiornando i dati disponibili."}
                 </span>
               </div>
             ) : null}

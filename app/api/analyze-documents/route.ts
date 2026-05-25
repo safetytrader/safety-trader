@@ -3,14 +3,16 @@ import {
   applyAiUpdates,
   buildFastFinalUpdates,
   buildNominaSkippedChanges,
-  isNominaDocumentType,
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
 import {
-  DIRECT_FILE_TOO_LARGE_MSG,
-  MAX_DIRECT_FILE_BYTES,
-} from "@/lib/analyzePayloadLimits";
+  assertUserOwnsTempPath,
+  downloadAiTempFile,
+  removeAiTempFile,
+  TEMP_DOWNLOAD_FAILED_MSG,
+} from "@/lib/aiTempStorage";
+import { MAX_DIRECT_FILE_BYTES } from "@/lib/analyzePayloadLimits";
 import {
   insertDocumentAnalysisServer,
   loadImpresaStateForAi,
@@ -34,7 +36,9 @@ import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 export const runtime = "nodejs";
 
 type AnalysisMode = "TEXT_FAST" | "FILE_FALLBACK";
-type RouteMode = "JSON_TEXT" | "FILE_SMALL";
+type RouteMode = "JSON_TEXT" | "TEMP_STORAGE_FILE" | "FILE_SMALL";
+
+const OPENAI_USER_ERROR = "Analisi AI non disponibile. Riprova tra poco.";
 
 function jsonError(message: string, status: number, details: string | null = null) {
   return Response.json({ ok: false, error: message, details }, { status });
@@ -44,6 +48,51 @@ function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   if (value == null) return "";
   return String(value).trim();
+}
+
+async function runOpenAiOnBuffer(options: {
+  buffer: Buffer;
+  mimeType: string;
+  fileName: string;
+}): Promise<{ analysisMode: AnalysisMode; rawAiResponse: string }> {
+  const { buffer, mimeType, fileName } = options;
+  let analysisMode: AnalysisMode = "FILE_FALLBACK";
+  let rawAiResponse = "";
+
+  if (isPdfMimeOrName(mimeType, fileName) && !isImageMime(mimeType)) {
+    console.time("pdf-text-extraction");
+    const extractedRaw = await extractPdfText(buffer);
+    const cleanedText = cleanDocumentText(extractedRaw);
+    console.timeEnd("pdf-text-extraction");
+
+    if (isTextSufficient(cleanedText)) {
+      analysisMode = "TEXT_FAST";
+      const hints = buildDocumentHints(fileName, cleanedText);
+
+      console.time("[AI] openai");
+      rawAiResponse = await analyzeDocumentTextWithOpenAI({
+        fileName,
+        documentText: cleanedText,
+        hints,
+      });
+      console.timeEnd("[AI] openai");
+    }
+  }
+
+  if (analysisMode === "FILE_FALLBACK") {
+    const hints = buildDocumentHints(fileName, "");
+
+    console.time("[AI] openai");
+    rawAiResponse = await analyzeDocumentWithOpenAI({
+      base64: buffer.toString("base64"),
+      mimeType,
+      fileName,
+      hints,
+    });
+    console.timeEnd("[AI] openai");
+  }
+
+  return { analysisMode, rawAiResponse };
 }
 
 export async function GET() {
@@ -60,6 +109,9 @@ export async function POST(request: Request) {
   console.log("[AI] content-type", contentType);
 
   console.time("[AI] total");
+
+  let tempPathToDelete: string | null = null;
+  let cleanupSupabase: ReturnType<typeof createSupabaseServer> | null = null;
 
   try {
     if (!hasApiKey) {
@@ -80,9 +132,9 @@ export async function POST(request: Request) {
     let fileSize = 0;
     let clientExtractedText = "";
     let buffer: Buffer | null = null;
+    let jsonTemporaryStoragePath = "";
 
     if (contentType.includes("application/json")) {
-      routeMode = "JSON_TEXT";
       const body = (await request.json()) as Record<string, unknown>;
       impresaId = String(body.impresaId || "").trim();
       cantiereId = String(body.cantiereId || "").trim();
@@ -90,7 +142,10 @@ export async function POST(request: Request) {
       fileName = String(body.fileName || "documento.pdf").trim() || "documento.pdf";
       mimeType = String(body.fileType || "application/pdf").trim() || "application/pdf";
       fileSize = Number(body.fileSize) || 0;
-      clientExtractedText = cleanDocumentText(String(body.extractedText || ""));
+      jsonTemporaryStoragePath = String(body.temporaryStoragePath || "").trim();
+
+      const hasExtractedText =
+        body.extractedText != null && String(body.extractedText).trim().length > 0;
 
       if (!impresaId) {
         return jsonError("Impresa non valida. Ricarica la pagina e riprova.", 400);
@@ -98,11 +153,20 @@ export async function POST(request: Request) {
       if (!cantiereId) {
         return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
       }
-      if (!isTextSufficient(clientExtractedText)) {
-        return jsonError(
-          "Testo estratto insufficiente per l'analisi. Usa un PDF testuale o un file più piccolo.",
-          400
-        );
+
+      if (jsonTemporaryStoragePath) {
+        routeMode = "TEMP_STORAGE_FILE";
+      } else if (hasExtractedText) {
+        routeMode = "JSON_TEXT";
+        clientExtractedText = cleanDocumentText(String(body.extractedText || ""));
+        if (!isTextSufficient(clientExtractedText)) {
+          return jsonError(
+            "Testo estratto insufficiente per l'analisi. Usa un PDF testuale o un file più piccolo.",
+            400
+          );
+        }
+      } else {
+        return jsonError("Richiesta non valida.", 400);
       }
     } else {
       const formData = await request.formData();
@@ -128,7 +192,10 @@ export async function POST(request: Request) {
       if (fileSize > MAX_DIRECT_FILE_BYTES) {
         console.log("[AI] mode", "FILE_REJECTED");
         console.log("[AI] fileSize", fileSize);
-        return jsonError(DIRECT_FILE_TOO_LARGE_MSG, 413);
+        return jsonError(
+          "File troppo grande per l'upload diretto. Ricarica il documento.",
+          413
+        );
       }
 
       buffer = Buffer.from(await file.arrayBuffer());
@@ -137,10 +204,9 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log("[AI] mode", routeMode);
-    console.log("[AI] fileSize", fileSize);
-
     const supabase = createSupabaseServer(accessToken);
+    cleanupSupabase = supabase;
+
     const {
       data: { user },
       error: authError,
@@ -149,6 +215,22 @@ export async function POST(request: Request) {
     if (authError || !user) {
       return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
+
+    if (routeMode === "TEMP_STORAGE_FILE") {
+      try {
+        tempPathToDelete = assertUserOwnsTempPath(jsonTemporaryStoragePath, user.id);
+        buffer = await downloadAiTempFile(supabase, tempPathToDelete);
+      } catch (pathErr) {
+        const msg =
+          pathErr instanceof Error && pathErr.message.includes("non valido")
+            ? pathErr.message
+            : TEMP_DOWNLOAD_FAILED_MSG;
+        return jsonError(msg, 403);
+      }
+    }
+
+    console.log("[AI] mode", routeMode);
+    console.log("[AI] fileSize", fileSize);
 
     let analysisMode: AnalysisMode = "FILE_FALLBACK";
     let rawAiResponse = "";
@@ -165,38 +247,11 @@ export async function POST(request: Request) {
       });
       console.timeEnd("[AI] openai");
     } else if (buffer) {
-      if (isPdfMimeOrName(mimeType, fileName) && !isImageMime(mimeType)) {
-        console.time("pdf-text-extraction");
-        const extractedRaw = await extractPdfText(buffer);
-        const cleanedText = cleanDocumentText(extractedRaw);
-        console.timeEnd("pdf-text-extraction");
-
-        if (isTextSufficient(cleanedText)) {
-          analysisMode = "TEXT_FAST";
-          const hints = buildDocumentHints(fileName, cleanedText);
-
-          console.time("[AI] openai");
-          rawAiResponse = await analyzeDocumentTextWithOpenAI({
-            fileName,
-            documentText: cleanedText,
-            hints,
-          });
-          console.timeEnd("[AI] openai");
-        }
-      }
-
-      if (analysisMode === "FILE_FALLBACK") {
-        const hints = buildDocumentHints(fileName, "");
-
-        console.time("[AI] openai");
-        rawAiResponse = await analyzeDocumentWithOpenAI({
-          base64: buffer.toString("base64"),
-          mimeType,
-          fileName,
-          hints,
-        });
-        console.timeEnd("[AI] openai");
-      }
+      const result = await runOpenAiOnBuffer({ buffer, mimeType, fileName });
+      analysisMode = result.analysisMode;
+      rawAiResponse = result.rawAiResponse;
+    } else {
+      return jsonError(TEMP_DOWNLOAD_FAILED_MSG, 422);
     }
 
     console.log("[AI] analysisMode", analysisMode);
@@ -285,7 +340,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error: unknown) {
-    const message = mapOpenAiError(error, hasApiKey);
+    const mapped = mapOpenAiError(error, hasApiKey);
+    const message =
+      mapped !== "Chiave OpenAI non configurata." &&
+      mapped !== "Quota OpenAI insufficiente o non disponibile."
+        ? OPENAI_USER_ERROR
+        : mapped;
     const status =
       message === "Chiave OpenAI non configurata." ||
       message === "Quota OpenAI insufficiente o non disponibile."
@@ -294,6 +354,9 @@ export async function POST(request: Request) {
 
     return jsonError(message, status, error instanceof Error ? error.message : null);
   } finally {
+    if (tempPathToDelete && cleanupSupabase) {
+      await removeAiTempFile(cleanupSupabase, tempPathToDelete);
+    }
     console.timeEnd("[AI] total");
   }
 }
