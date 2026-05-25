@@ -8,6 +8,10 @@ import {
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
 import {
+  DIRECT_FILE_TOO_LARGE_MSG,
+  MAX_DIRECT_FILE_BYTES,
+} from "@/lib/analyzePayloadLimits";
+import {
   insertDocumentAnalysisServer,
   loadImpresaStateForAi,
   persistImpresaStateAfterAi,
@@ -29,8 +33,11 @@ import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
 
-function jsonError(message: string, status: number) {
-  return Response.json({ ok: false, error: message }, { status });
+type AnalysisMode = "TEXT_FAST" | "FILE_FALLBACK";
+type RouteMode = "JSON_TEXT" | "FILE_SMALL";
+
+function jsonError(message: string, status: number, details: string | null = null) {
+  return Response.json({ ok: false, error: message, details }, { status });
 }
 
 function getFormString(formData: FormData, key: string) {
@@ -39,10 +46,20 @@ function getFormString(formData: FormData, key: string) {
   return String(value).trim();
 }
 
+export async function GET() {
+  console.log("[AI] request method", "GET");
+  console.log("[AI] content-type", null);
+  return jsonError("Metodo non consentito. Usa POST.", 405);
+}
+
 export async function POST(request: Request) {
   const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
 
-  console.time("ai-analysis-total");
+  console.log("[AI] request method", request.method);
+  const contentType = request.headers.get("content-type") || "";
+  console.log("[AI] content-type", contentType);
+
+  console.time("[AI] total");
 
   try {
     if (!hasApiKey) {
@@ -54,29 +71,74 @@ export async function POST(request: Request) {
       return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
 
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const impresaId = getFormString(formData, "impresaId");
-    const cantiereId = getFormString(formData, "cantiereId");
-    const impresaNome = getFormString(formData, "impresaNome");
+    let routeMode: RouteMode = "FILE_SMALL";
+    let impresaId = "";
+    let cantiereId = "";
+    let impresaNome = "";
+    let fileName = "documento.pdf";
+    let mimeType = "application/pdf";
+    let fileSize = 0;
+    let clientExtractedText = "";
+    let buffer: Buffer | null = null;
 
-    if (!file || !(file instanceof File)) {
-      return jsonError("File mancante. Seleziona un documento da analizzare.", 400);
-    }
-    if (!impresaId) {
-      return jsonError("Impresa non valida. Ricarica la pagina e riprova.", 400);
-    }
-    if (!cantiereId) {
-      return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
+    if (contentType.includes("application/json")) {
+      routeMode = "JSON_TEXT";
+      const body = (await request.json()) as Record<string, unknown>;
+      impresaId = String(body.impresaId || "").trim();
+      cantiereId = String(body.cantiereId || "").trim();
+      impresaNome = String(body.impresaNome || "").trim();
+      fileName = String(body.fileName || "documento.pdf").trim() || "documento.pdf";
+      mimeType = String(body.fileType || "application/pdf").trim() || "application/pdf";
+      fileSize = Number(body.fileSize) || 0;
+      clientExtractedText = cleanDocumentText(String(body.extractedText || ""));
+
+      if (!impresaId) {
+        return jsonError("Impresa non valida. Ricarica la pagina e riprova.", 400);
+      }
+      if (!cantiereId) {
+        return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
+      }
+      if (!isTextSufficient(clientExtractedText)) {
+        return jsonError(
+          "Testo estratto insufficiente per l'analisi. Usa un PDF testuale o un file più piccolo.",
+          400
+        );
+      }
+    } else {
+      const formData = await request.formData();
+      const file = formData.get("file");
+      impresaId = getFormString(formData, "impresaId");
+      cantiereId = getFormString(formData, "cantiereId");
+      impresaNome = getFormString(formData, "impresaNome");
+
+      if (!file || !(file instanceof File)) {
+        return jsonError("File mancante. Seleziona un documento da analizzare.", 400);
+      }
+      if (!impresaId) {
+        return jsonError("Impresa non valida. Ricarica la pagina e riprova.", 400);
+      }
+      if (!cantiereId) {
+        return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
+      }
+
+      fileSize = file.size;
+      fileName = file.name || "documento.pdf";
+      mimeType = file.type || "application/pdf";
+
+      if (fileSize > MAX_DIRECT_FILE_BYTES) {
+        console.log("[AI] mode", "FILE_REJECTED");
+        console.log("[AI] fileSize", fileSize);
+        return jsonError(DIRECT_FILE_TOO_LARGE_MSG, 413);
+      }
+
+      buffer = Buffer.from(await file.arrayBuffer());
+      if (!buffer.length) {
+        return jsonError("Documento non leggibile dall'AI.", 422);
+      }
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    if (!buffer.length) {
-      return jsonError("Documento non leggibile dall'AI.", 422);
-    }
-
-    const mimeType = file.type || "application/pdf";
-    const fileName = file.name || "documento.pdf";
+    console.log("[AI] mode", routeMode);
+    console.log("[AI] fileSize", fileSize);
 
     const supabase = createSupabaseServer(accessToken);
     const {
@@ -88,43 +150,56 @@ export async function POST(request: Request) {
       return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
 
-    let analysisMode: "TEXT_FAST" | "FILE_FALLBACK" = "FILE_FALLBACK";
+    let analysisMode: AnalysisMode = "FILE_FALLBACK";
     let rawAiResponse = "";
 
-    if (isPdfMimeOrName(mimeType, fileName) && !isImageMime(mimeType)) {
-      console.time("pdf-text-extraction");
-      const extractedRaw = await extractPdfText(buffer);
-      const cleanedText = cleanDocumentText(extractedRaw);
-      console.timeEnd("pdf-text-extraction");
+    if (routeMode === "JSON_TEXT") {
+      analysisMode = "TEXT_FAST";
+      const hints = buildDocumentHints(fileName, clientExtractedText);
 
-      if (isTextSufficient(cleanedText)) {
-        analysisMode = "TEXT_FAST";
-        const hints = buildDocumentHints(fileName, cleanedText);
+      console.time("[AI] openai");
+      rawAiResponse = await analyzeDocumentTextWithOpenAI({
+        fileName,
+        documentText: clientExtractedText,
+        hints,
+      });
+      console.timeEnd("[AI] openai");
+    } else if (buffer) {
+      if (isPdfMimeOrName(mimeType, fileName) && !isImageMime(mimeType)) {
+        console.time("pdf-text-extraction");
+        const extractedRaw = await extractPdfText(buffer);
+        const cleanedText = cleanDocumentText(extractedRaw);
+        console.timeEnd("pdf-text-extraction");
 
-        console.time("openai-call");
-        rawAiResponse = await analyzeDocumentTextWithOpenAI({
+        if (isTextSufficient(cleanedText)) {
+          analysisMode = "TEXT_FAST";
+          const hints = buildDocumentHints(fileName, cleanedText);
+
+          console.time("[AI] openai");
+          rawAiResponse = await analyzeDocumentTextWithOpenAI({
+            fileName,
+            documentText: cleanedText,
+            hints,
+          });
+          console.timeEnd("[AI] openai");
+        }
+      }
+
+      if (analysisMode === "FILE_FALLBACK") {
+        const hints = buildDocumentHints(fileName, "");
+
+        console.time("[AI] openai");
+        rawAiResponse = await analyzeDocumentWithOpenAI({
+          base64: buffer.toString("base64"),
+          mimeType,
           fileName,
-          documentText: cleanedText,
           hints,
         });
-        console.timeEnd("openai-call");
+        console.timeEnd("[AI] openai");
       }
     }
 
-    if (analysisMode === "FILE_FALLBACK") {
-      const hints = buildDocumentHints(fileName, "");
-
-      console.time("openai-call");
-      rawAiResponse = await analyzeDocumentWithOpenAI({
-        base64: buffer.toString("base64"),
-        mimeType,
-        fileName,
-        hints,
-      });
-      console.timeEnd("openai-call");
-    }
-
-    console.log("mode-used", analysisMode);
+    console.log("[AI] analysisMode", analysisMode);
 
     const aiPayload = parseAiJsonResponse(rawAiResponse);
     const built = buildFastFinalUpdates(aiPayload, { fileName });
@@ -162,7 +237,7 @@ export async function POST(request: Request) {
           built.updates
         );
 
-    console.time("db-update");
+    console.time("[AI] db");
     await persistImpresaStateAfterAi(supabase, impresaId, {
       checks: applied.checks,
       checkRefs: preservedCheckRefs,
@@ -182,12 +257,13 @@ export async function POST(request: Request) {
       extracted_data: {
         ...(aiPayload.extracted_data || {}),
         analysis_mode: analysisMode,
+        route_mode: routeMode,
       },
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,
       warnings,
     });
-    console.timeEnd("db-update");
+    console.timeEnd("[AI] db");
 
     return Response.json({
       ok: true,
@@ -216,8 +292,8 @@ export async function POST(request: Request) {
         ? 500
         : 422;
 
-    return jsonError(message, status);
+    return jsonError(message, status, error instanceof Error ? error.message : null);
   } finally {
-    console.timeEnd("ai-analysis-total");
+    console.timeEnd("[AI] total");
   }
 }

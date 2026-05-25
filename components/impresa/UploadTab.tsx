@@ -8,6 +8,7 @@ import {
   formatAppliedSummary,
   formatSkippedSummary,
 } from "@/lib/documentAnalysis";
+import { prepareAnalyzeRequest } from "@/lib/prepareAnalyzeRequest";
 
 const EXTRACTED_FIELD_LABELS = {
   impresa: "Impresa",
@@ -101,18 +102,24 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         data: { session },
       } = await supabase.auth.getSession();
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("impresaId", String(activeImpresa));
-      formData.append("cantiereId", String(activeCantiere));
-      formData.append("impresaNome", imp.nome || "");
+      const authHeaders = session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {};
+
+      const payload = await prepareAnalyzeRequest(
+        file,
+        {
+          impresaId: String(activeImpresa),
+          cantiereId: String(activeCantiere),
+          impresaNome: imp.nome || "",
+        },
+        authHeaders
+      );
 
       const res = await fetch("/api/analyze-documents", {
         method: "POST",
-        headers: session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {},
-        body: formData,
+        headers: payload.headers,
+        body: payload.body,
       });
 
       const data = await parseJsonResponse(res);
