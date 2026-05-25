@@ -9,6 +9,7 @@ import {
   formatSkippedSummary,
 } from "@/lib/documentAnalysis";
 import { AI_TEMP_BUCKET, uploadFileToAiTemp } from "@/lib/aiTempStorage";
+import { shouldUploadPosTempForAnalysis } from "@/lib/likelyPosDocument";
 import {
   buildAnalyzeFetchPayload,
   planAnalyzeRequest,
@@ -123,11 +124,13 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       const plan = await planAnalyzeRequest(file, ids);
       let temporaryStoragePath;
 
-      const isPdfFile =
-        file.type === "application/pdf" ||
-        String(file.name || "").toLowerCase().endsWith(".pdf");
-      const needsTempUpload =
-        plan.mode === "TEMP_STORAGE" || (plan.mode === "JSON_TEXT" && isPdfFile);
+      const extractedTextHint =
+        plan.mode === "JSON_TEXT" ? String(plan.body?.extractedText || "") : "";
+      const needsTempUpload = shouldUploadPosTempForAnalysis(
+        plan,
+        file,
+        extractedTextHint
+      );
 
       if (needsTempUpload) {
         setStatusPhase("preparing");
@@ -198,6 +201,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         is_nomina: Boolean(data.is_nomina),
         is_pos: isPos,
         pos_refs_status: data.pos_refs_status,
+        pos_refs_source: data.pos_refs_source,
         pos_references_found: data.pos_references_found ?? 0,
       });
     } catch (err) {
@@ -386,9 +390,12 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                       <strong>Checklist aggiornata</strong>
                     </p>
                     <p className="upload-ai-modal-muted">
-                      {resultModal.pos_refs_status === "found"
+                      {resultModal.pos_refs_status === "found" &&
+                      resultModal.pos_references_found > 0
                         ? `Riferimenti pagina rilevati: ${resultModal.pos_references_found}`
-                        : "Riferimenti pagina non disponibili"}
+                        : resultModal.pos_refs_status === "failed"
+                          ? "Checklist aggiornata. Riferimenti pagina non rilevati."
+                          : "Riferimenti pagina non disponibili"}
                     </p>
                   </div>
                 ) : null}

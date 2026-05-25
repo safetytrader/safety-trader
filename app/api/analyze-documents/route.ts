@@ -162,6 +162,7 @@ export async function POST(request: Request) {
     let clientExtractedText = "";
     let clientPageTexts: { page: number; text: string }[] = [];
     let buffer: Buffer | null = null;
+    let refsBuffer: Buffer | null = null;
     let jsonTemporaryStoragePath = "";
 
     if (contentType.includes("application/json")) {
@@ -259,8 +260,8 @@ export async function POST(request: Request) {
     if (jsonTemporaryStoragePath) {
       try {
         tempPathToDelete = assertUserOwnsTempPath(jsonTemporaryStoragePath, user.id);
-        buffer = await downloadAiTempFile(supabase, tempPathToDelete);
-        console.log("[AI] temp pdf loaded for references", buffer?.length || 0);
+        refsBuffer = await downloadAiTempFile(supabase, tempPathToDelete);
+        console.log("[AI] temp pdf loaded", refsBuffer?.length || 0);
       } catch (pathErr) {
         const msg =
           pathErr instanceof Error && pathErr.message.includes("non valido")
@@ -269,10 +270,12 @@ export async function POST(request: Request) {
         if (routeMode === "TEMP_STORAGE_FILE") {
           return jsonError(formatTempDownloadError(msg), 403);
         }
-        console.warn("[AI] temp pdf load failed (fast analysis continues)", msg);
+        console.warn("[AI] temp pdf load failed (TEXT_FAST continues)", msg);
       }
     }
 
+    console.log("[AI] has temporaryStoragePath", Boolean(jsonTemporaryStoragePath));
+    console.log("[AI] has extractedPages", Boolean(clientPageTexts?.length));
     console.log("[AI] mode", routeMode);
     console.log("[AI] fileSize", fileSize);
 
@@ -290,6 +293,11 @@ export async function POST(request: Request) {
         hints,
       });
       console.timeEnd("[AI] openai");
+    } else if (routeMode === "TEMP_STORAGE_FILE" && refsBuffer) {
+      buffer = refsBuffer;
+      const result = await runOpenAiOnBuffer({ buffer, mimeType, fileName });
+      analysisMode = result.analysisMode;
+      rawAiResponse = result.rawAiResponse;
     } else if (buffer) {
       const result = await runOpenAiOnBuffer({ buffer, mimeType, fileName });
       analysisMode = result.analysisMode;
@@ -306,6 +314,8 @@ export async function POST(request: Request) {
       built.documentType ||
       resolveDocumentTypeWithPriority(aiPayload, fileName) ||
       aiPayload.document_type;
+
+    console.log("[AI] document type", documentType);
     const warnings = appendImpresaMismatchWarning(
       [...(aiPayload.warnings || []), ...(built.mappingWarnings || [])],
       aiPayload.extracted_data?.impresa,
@@ -338,6 +348,8 @@ export async function POST(request: Request) {
 
     let posReferencesFound = 0;
     let posReferencesSkipped = 0;
+    let posRefsSource: "extracted_pages" | "temp_pdf" | "unavailable" | "not_applicable" =
+      "not_applicable";
     let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
       "not_applicable";
 
@@ -345,10 +357,13 @@ export async function POST(request: Request) {
       const posRefs = await extractPosPageReferences({
         fileName,
         mimeType,
-        buffer,
+        buffer: refsBuffer,
         pageTexts: clientPageTexts,
+        hasTemporaryStoragePath: Boolean(jsonTemporaryStoragePath),
         posChecks: applied.checks,
       });
+
+      posRefsSource = posRefs.source;
 
       warnings.push(...posRefs.warnings);
       posReferencesSkipped = Math.max(
@@ -440,6 +455,7 @@ export async function POST(request: Request) {
       is_nomina: Boolean(built.isNomina),
       pos_references_found: posReferencesFound,
       pos_refs_status: posRefsStatus,
+      pos_refs_source: posRefsSource,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,

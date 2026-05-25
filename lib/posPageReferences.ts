@@ -16,10 +16,15 @@ import {
 } from "@/lib/openAiAnalyze";
 
 export const POS_REFS_NO_PAGE_INFO_WARNING =
-  "Riferimenti pagina non disponibili: serve il PDF temporaneo o testo estratto per pagina.";
+  "Riferimenti pagina non disponibili.";
 
 export const POS_REFS_FAILED_WARNING =
   "Checklist aggiornata. Riferimenti pagina non rilevati.";
+
+export const POS_REFS_TEMP_DOWNLOAD_WARNING =
+  "Checklist aggiornata. Impossibile scaricare il PDF temporaneo per i riferimenti pagina.";
+
+export type PosReferencesSource = "extracted_pages" | "temp_pdf" | "unavailable";
 
 export type PosPageReferencesResult = {
   checkRefs: Record<string, string>;
@@ -27,7 +32,7 @@ export type PosPageReferencesResult = {
   referencesFoundRaw: number;
   referencesFound: number;
   failed: boolean;
-  source: "temp_pdf" | "page_text" | "unavailable";
+  source: PosReferencesSource;
 };
 
 type PageTextEntry = { page: number; text: string };
@@ -48,7 +53,26 @@ function buildGroupLabel(items = [], index = 0) {
   return `gruppo ${index + 1}`;
 }
 
-function resolvePosReferencesSource(buffer, pageTexts = []) {
+function resolvePosReferencesSource(
+  buffer,
+  pageTexts = [],
+  hasTemporaryStoragePath = false
+) {
+  const pages = Array.isArray(pageTexts) ? pageTexts : [];
+  const refDocumentText = buildPosReferenceDocumentText({
+    pageTexts: pages,
+    maxChars: MAX_POS_REF_TEXT_CHARS,
+  });
+
+  if (pages.length && refDocumentText) {
+    return {
+      source: "extracted_pages",
+      useFile: false,
+      pages: pages.length,
+      refDocumentText,
+    };
+  }
+
   if (buffer?.length) {
     return {
       source: "temp_pdf",
@@ -58,18 +82,13 @@ function resolvePosReferencesSource(buffer, pageTexts = []) {
     };
   }
 
-  const pages = Array.isArray(pageTexts) ? pageTexts : [];
-  const refDocumentText = buildPosReferenceDocumentText({
-    pageTexts: pages,
-    maxChars: MAX_POS_REF_TEXT_CHARS,
-  });
-
-  if (pages.length && refDocumentText) {
+  if (hasTemporaryStoragePath) {
     return {
-      source: "page_text",
+      source: "unavailable",
       useFile: false,
-      pages: pages.length,
-      refDocumentText,
+      pages: 0,
+      refDocumentText: "",
+      tempDownloadMissing: true,
     };
   }
 
@@ -78,6 +97,7 @@ function resolvePosReferencesSource(buffer, pageTexts = []) {
     useFile: false,
     pages: 0,
     refDocumentText: "",
+    tempDownloadMissing: false,
   };
 }
 
@@ -86,6 +106,7 @@ export async function extractPosPageReferences(options: {
   mimeType: string;
   buffer: Buffer | null;
   pageTexts?: PageTextEntry[];
+  hasTemporaryStoragePath?: boolean;
   posChecks?: Record<string, string>;
 }): Promise<PosPageReferencesResult> {
   const warnings: string[] = [];
@@ -93,15 +114,14 @@ export async function extractPosPageReferences(options: {
   const mimeType = options.mimeType || "application/pdf";
   const buffer = options.buffer;
   const pageTexts = options.pageTexts || [];
+  const hasTemporaryStoragePath = Boolean(options.hasTemporaryStoragePath);
 
   const items = getPosChecklistItemsForReferences(options.posChecks || {});
   console.log("[AI] POS references checklist items", items.length);
 
   if (!items.length) {
     console.log("[AI] POS references source", "unavailable");
-    console.log("[AI] POS references pages available", 0);
     console.log("[AI] POS references applied", 0);
-    console.log("[AI] POS references warning", "no checklist items");
     return {
       checkRefs: {},
       warnings,
@@ -115,14 +135,23 @@ export async function extractPosPageReferences(options: {
   const groups = buildPosReferenceItemGroups(items, POS_REF_GROUP_SIZE);
   console.log("[AI] POS reference groups", groups.length);
 
-  const resolved = resolvePosReferencesSource(buffer, pageTexts);
+  const resolved = resolvePosReferencesSource(
+    buffer,
+    pageTexts,
+    hasTemporaryStoragePath
+  );
   console.log("[AI] POS references source", resolved.source);
   console.log("[AI] POS references pages available", resolved.pages);
 
   if (resolved.source === "unavailable") {
-    warnings.push(POS_REFS_NO_PAGE_INFO_WARNING);
+    if (resolved.tempDownloadMissing) {
+      warnings.push(POS_REFS_TEMP_DOWNLOAD_WARNING);
+      console.log("[AI] POS references warning", POS_REFS_TEMP_DOWNLOAD_WARNING);
+    } else {
+      warnings.push(POS_REFS_NO_PAGE_INFO_WARNING);
+      console.log("[AI] POS references warning", POS_REFS_NO_PAGE_INFO_WARNING);
+    }
     console.log("[AI] POS references applied", 0);
-    console.log("[AI] POS references warning", POS_REFS_NO_PAGE_INFO_WARNING);
     return {
       checkRefs: {},
       warnings,
@@ -177,7 +206,6 @@ export async function extractPosPageReferences(options: {
 
     console.log("[AI] POS references found raw", rawCount);
     console.log("[AI] POS references applied", appliedCount);
-    console.log("[AI] POS references skipped", Math.max(0, rawCount - appliedCount));
 
     if (failedGroups > 0 && appliedCount === 0) {
       warnings.push(POS_REFS_FAILED_WARNING);
