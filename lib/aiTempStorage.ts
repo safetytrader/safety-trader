@@ -137,12 +137,15 @@ export async function downloadAiTempFile(
   const { data, error } = await client.storage.from(AI_TEMP_BUCKET).download(storagePath);
 
   if (error || !data) {
-    console.warn("[AI] temp download failed", storagePath, error?.message);
+    console.warn("[POS refs] temp download failed", storagePath, error?.message);
     throw new Error(formatTempDownloadError(error?.message));
   }
 
-  const bytes = await data.arrayBuffer();
-  const buffer = Buffer.from(bytes);
+  const arrayBuffer = await data.arrayBuffer();
+  const buffer = Buffer.from(new Uint8Array(arrayBuffer));
+
+  console.log("[POS refs] downloaded file bytes", buffer.length);
+
   if (!buffer.length) {
     throw new Error(formatTempDownloadError("file vuoto"));
   }

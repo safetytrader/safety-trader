@@ -261,7 +261,7 @@ export async function POST(request: Request) {
       try {
         tempPathToDelete = assertUserOwnsTempPath(jsonTemporaryStoragePath, user.id);
         refsBuffer = await downloadAiTempFile(supabase, tempPathToDelete);
-        console.log("[AI] temp pdf loaded", refsBuffer?.length || 0);
+        console.log("[POS refs] temp path", tempPathToDelete);
       } catch (pathErr) {
         const msg =
           pathErr instanceof Error && pathErr.message.includes("non valido")
@@ -354,6 +354,7 @@ export async function POST(request: Request) {
       | "unavailable"
       | "not_applicable" = "not_applicable";
     let posRefsNoText = false;
+    let posRefsExtractionFailed = false;
     let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
       "not_applicable";
 
@@ -368,10 +369,12 @@ export async function POST(request: Request) {
         buffer: refsBuffer,
         pageTexts: clientPageTexts,
         posChecks: applied.checks,
+        temporaryStoragePath: jsonTemporaryStoragePath || undefined,
       });
 
       posRefsSource = posRefs.source;
       posRefsNoText = posRefs.noText;
+      posRefsExtractionFailed = posRefs.extractionFailed;
       console.log("[AI] POS references source", posRefsSource);
       console.log("[AI] POS references applied", posRefs.referencesFound);
 
@@ -413,7 +416,9 @@ export async function POST(request: Request) {
 
       posReferencesFound = refAppliedCount;
 
-      if (posRefs.noText) {
+      if (posRefs.extractionFailed) {
+        posRefsStatus = "failed";
+      } else if (posRefs.noText) {
         posRefsStatus = "unavailable";
       } else if (posReferencesFound > 0) {
         posRefsStatus = "found";
@@ -467,6 +472,7 @@ export async function POST(request: Request) {
       pos_refs_status: posRefsStatus,
       pos_refs_source: posRefsSource,
       pos_refs_no_text: posRefsNoText,
+      pos_refs_extraction_failed: posRefsExtractionFailed,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,

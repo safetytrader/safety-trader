@@ -1,9 +1,12 @@
 // @ts-nocheck
 import { getPosChecklistItemsForReferences } from "@/lib/documentAnalysis";
-import { extractPdfPages } from "@/lib/pdfPagesServer";
+import { extractPdfPagesFromBuffer } from "@/lib/pdfPagesServer";
 
 export const POS_SCANNED_WARNING =
   "Riferimenti pagina non rilevabili: PDF scansionato o testo non estraibile.";
+
+export const POS_EXTRACTION_TECHNICAL_WARNING =
+  "Errore tecnico durante l'estrazione dei riferimenti pagina.";
 
 export const POS_REFERENCE_KEYWORDS: Record<string, string[]> = {
   a1: [
@@ -12,35 +15,59 @@ export const POS_REFERENCE_KEYWORDS: Record<string, string[]> = {
     "datore di lavoro",
     "sede legale",
     "telefono",
+    "impresa affidataria",
     "impresa",
   ],
   a2: [
-    "attività",
-    "lavorazioni",
     "lavorazioni svolte",
+    "lavorazioni svolte in cantiere",
     "subappalti",
     "descrizione lavori",
+    "specifiche attività",
+    "attività e lavorazioni",
   ],
   a3: [
     "addetti primo soccorso",
     "addetti antincendio",
+    "primo soccorso",
+    "antincendio",
     "rls",
     "rlst",
     "emergenze",
   ],
   a4: ["medico competente", "sorveglianza sanitaria"],
-  a5: ["rspp", "responsabile del servizio di prevenzione"],
-  a6: ["preposto", "capocantiere", "direttore tecnico di cantiere", "dtc"],
-  a7: ["elenco lavoratori", "nominativo lavoratori", "qualifica", "mansione"],
-  b1: ["mansioni", "figure nominate", "compiti sicurezza"],
+  a5: ["rspp", "responsabile del servizio di prevenzione", "responsabile servizio"],
+  a6: [
+    "preposto",
+    "capocantiere",
+    "direttore tecnico di cantiere",
+    "dtc",
+    "direttore tecnico",
+  ],
+  a7: [
+    "elenco lavoratori",
+    "nominativo lavoratori",
+    "numero e qualifiche",
+    "qualifiche lavoratori",
+    "qualifica",
+    "mansione",
+  ],
+  b1: ["mansioni", "figure nominate", "compiti sicurezza", "mansioni sicurezza"],
   c1: [
     "modalità organizzative",
     "turni",
     "organizzazione del cantiere",
     "descrizione attività",
   ],
-  d1: ["ponteggi", "trabattelli", "opere provvisionali"],
-  d2: ["macchine", "impianti", "attrezzature", "mezzi d'opera"],
+  d1: ["ponteggi", "trabattelli", "opere provvisionali", "elenco opere provvisionali"],
+  d2: [
+    "macchine",
+    "impianti",
+    "attrezzature",
+    "mezzi d'opera",
+    "macchine e impianti",
+    "elenco opere provvisionali",
+  ],
   e1: ["sostanze pericolose", "schede di sicurezza", "sds", "prodotti chimici"],
   f1: ["rumore", "valutazione rumore", "esposizione sonora"],
   f2: ["vibrazioni", "valutazione vibrazioni"],
@@ -49,7 +76,6 @@ export const POS_REFERENCE_KEYWORDS: Record<string, string[]> = {
   i1: ["dpi", "dispositivi di protezione individuale", "elenco dpi"],
 };
 
-/** Parole singole troppo generiche: non bastano da sole. */
 const GENERIC_KEYWORDS = new Set([
   "attivita",
   "attività",
@@ -70,7 +96,7 @@ const GENERIC_KEYWORDS = new Set([
 ]);
 
 const MIN_PAGE_SCORE = 2;
-const MIN_TOTAL_TEXT_CHARS = 150;
+const MIN_SCANNED_TEXT_CHARS = 300;
 
 function normalizeText(value = "") {
   return String(value || "")
@@ -171,21 +197,48 @@ export type DeterministicPosRefsResult = {
   failed: boolean;
   source: "deterministic" | "page_text" | "unavailable";
   noText: boolean;
+  extractionFailed: boolean;
 };
 
 export async function extractDeterministicPosReferences(options: {
   buffer?: Buffer | null;
   pageTexts?: { page: number; text: string }[];
   posChecks?: Record<string, string>;
+  temporaryStoragePath?: string;
 }): Promise<DeterministicPosRefsResult> {
+  if (options.temporaryStoragePath) {
+    console.log("[POS refs] temp path", options.temporaryStoragePath);
+  }
+  if (options.buffer?.length) {
+    console.log("[POS refs] downloaded file bytes", options.buffer.length);
+  }
+
+  const items = getPosChecklistItemsForReferences(options.posChecks || {});
+  console.log("[POS refs] checklist items", items.length);
+
   let pages = [];
+  let extractionFailed = false;
 
   if (options.buffer?.length) {
     try {
-      pages = await extractPdfPages(options.buffer);
+      pages = await extractPdfPagesFromBuffer(options.buffer);
     } catch (err) {
-      console.warn("[POS refs] extractPdfPages failed", err);
-      pages = [];
+      extractionFailed = true;
+      console.error("[POS refs] extraction error", err);
+      console.log("[POS refs] refs found deterministic", 0);
+      console.log("[POS refs] refs applied", 0);
+      return {
+        checkRefs: {},
+        warnings: [
+          `${POS_EXTRACTION_TECHNICAL_WARNING} ${err?.message ? `(${String(err.message).slice(0, 120)})` : ""}`.trim(),
+        ],
+        referencesFound: 0,
+        referencesFoundRaw: 0,
+        failed: true,
+        source: "unavailable",
+        noText: false,
+        extractionFailed: true,
+      };
     }
   } else if (options.pageTexts?.length) {
     pages = options.pageTexts
@@ -194,17 +247,31 @@ export async function extractDeterministicPosReferences(options: {
         text: String(p.text || "").trim(),
       }))
       .filter(p => Number.isFinite(p.page) && p.page > 0);
+    console.log("[POS refs] using client extractedPages", pages.length);
   }
 
+  const totalChars = countUsefulChars(pages);
   console.log("[POS refs] pages extracted", pages.length);
+  console.log("[POS refs] total text chars", totalChars);
+  console.log("[POS refs] sample page 1", pages[0]?.text?.slice(0, 300) || "");
 
-  const items = getPosChecklistItemsForReferences(options.posChecks || {});
-  console.log("[POS refs] checklist items", items.length);
-
-  const usefulChars = countUsefulChars(pages);
-  const noText = !pages.length || usefulChars < MIN_TOTAL_TEXT_CHARS;
+  const noText =
+    pages.length > 0 && totalChars < MIN_SCANNED_TEXT_CHARS;
 
   console.log("[POS refs] scanned or no text", noText);
+
+  if (!pages.length && !options.buffer?.length && !options.pageTexts?.length) {
+    return {
+      checkRefs: {},
+      warnings: [POS_EXTRACTION_TECHNICAL_WARNING],
+      referencesFound: 0,
+      referencesFoundRaw: 0,
+      failed: true,
+      source: "unavailable",
+      noText: false,
+      extractionFailed: true,
+    };
+  }
 
   if (noText) {
     console.log("[POS refs] refs found deterministic", 0);
@@ -217,6 +284,7 @@ export async function extractDeterministicPosReferences(options: {
       failed: false,
       source: "unavailable",
       noText: true,
+      extractionFailed: false,
     };
   }
 
@@ -234,5 +302,6 @@ export async function extractDeterministicPosReferences(options: {
     failed: false,
     source: options.buffer?.length ? "deterministic" : "page_text",
     noText: false,
+    extractionFailed: false,
   };
 }

@@ -203,6 +203,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         pos_refs_status: data.pos_refs_status,
         pos_refs_source: data.pos_refs_source,
         pos_refs_no_text: Boolean(data.pos_refs_no_text),
+        pos_refs_extraction_failed: Boolean(data.pos_refs_extraction_failed),
         pos_references_found: data.pos_references_found ?? 0,
       });
     } catch (err) {
@@ -393,9 +394,11 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                     <p className="upload-ai-modal-muted">
                       {resultModal.pos_references_found > 0
                         ? `Riferimenti pagina rilevati: ${resultModal.pos_references_found}`
-                        : resultModal.pos_refs_no_text
-                          ? "Riferimenti pagina non rilevabili: PDF scansionato o testo non estraibile."
-                          : "Nessun riferimento pagina trovato con ricerca automatica nel documento."}
+                        : resultModal.pos_refs_extraction_failed
+                          ? "Errore tecnico durante l'estrazione dei riferimenti pagina."
+                          : resultModal.pos_refs_no_text
+                            ? "Riferimenti pagina non rilevabili: PDF scansionato o testo non estraibile."
+                            : "Nessun riferimento pagina trovato con ricerca automatica nel documento."}
                     </p>
                   </div>
                 ) : null}
