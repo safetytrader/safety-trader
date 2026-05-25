@@ -11,6 +11,34 @@ export function documentTextHasPageMarkers(text = "") {
   return PAGE_MARKER_RE.test(String(text || ""));
 }
 
+/**
+ * Testo per riferimenti pagina POS: solo pageTexts, mai extractedText troncato.
+ */
+export function buildPosReferenceDocumentText(
+  options: {
+    pageTexts?: { page: number; text: string }[];
+    maxChars?: number;
+  } = {}
+) {
+  const maxChars = options.maxChars ?? 50000;
+  const pageTexts = Array.isArray(options.pageTexts) ? options.pageTexts : [];
+
+  if (!pageTexts.length) return "";
+
+  let out = "";
+  for (const entry of pageTexts) {
+    const page = Number(entry?.page);
+    if (!Number.isFinite(page) || page <= 0) continue;
+    const text = String(entry?.text || "").trim();
+    if (!text) continue;
+    const block = `--- PAGINA ${page} ---\n${text}\n\n`;
+    if (out.length + block.length > maxChars) break;
+    out += block;
+  }
+
+  return out.trim();
+}
+
 function normalizeForMatch(value) {
   return String(value ?? "")
     .toLowerCase()

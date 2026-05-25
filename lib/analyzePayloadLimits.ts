@@ -1,8 +1,14 @@
 /** Limite upload diretto verso la route Vercel (body serverless). */
 export const MAX_DIRECT_FILE_BYTES = 3 * 1024 * 1024;
 
-/** Testo inviato in JSON (client → route). */
+/** Testo inviato in JSON (client → route) per analisi veloce. */
 export const MAX_EXTRACTED_TEXT_CHARS = 12000;
+
+/** Testo page-based per riferimenti pagina POS (non troncare a 12k). */
+export const MAX_POS_REF_TEXT_CHARS = 50000;
+
+/** Voci checklist per gruppo nella seconda analisi POS. */
+export const POS_REF_GROUP_SIZE = 6;
 
 export const MIN_CLIENT_TEXT_CHARS = 300;
 

@@ -347,6 +347,53 @@ export function buildCheckRefsFromEvidence(checklistEvidence = []) {
   return filterTrustedPageReferences(validated);
 }
 
+/** POS: valida ogni evidenza singolarmente (stessa pagina ammessa se excerpt distinti). */
+export function buildCheckRefsFromEvidencePos(checklistEvidence = []) {
+  const checkRefs = {};
+
+  for (const entry of checklistEvidence || []) {
+    const normalized = normalizeEvidenceEntry(entry);
+    if (!normalized) continue;
+    if (checkRefs[normalized.key]) continue;
+    checkRefs[normalized.key] = normalized.formatted;
+  }
+
+  return checkRefs;
+}
+
+/** Voci checklist POS marcate come conformi e aggiornabili con riferimenti. */
+export function getPosChecklistItemsForReferences(checks = {}) {
+  return CHECKLIST_ITEMS.filter(item => {
+    if (POS_CHECKLIST_EXCLUDED_IDS.includes(item.id)) return false;
+    return checks[item.id] === "si";
+  }).map(item => ({
+    id: item.id,
+    label: item.label,
+    lettera: item.lettera,
+  }));
+}
+
+/** Suddivide le voci in gruppi da analizzare separatamente (max N per gruppo). */
+export function buildPosReferenceItemGroups(items = [], maxPerGroup = 6) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return [];
+
+  const groups = [];
+  let batch = [];
+
+  for (const item of list) {
+    batch.push(item);
+    if (batch.length >= maxPerGroup) {
+      groups.push(batch);
+      batch = [];
+    }
+  }
+
+  if (batch.length) groups.push(batch);
+
+  return groups;
+}
+
 /** Riferimento attendibile solo con pagina valida ed excerpt specifico. */
 export function isTrustworthyChecklistReference(ref) {
   if (ref == null) return false;

@@ -6,9 +6,11 @@ function isPdfFile(file: File) {
   return mime === "application/pdf" || mime.includes("pdf") || name.endsWith(".pdf");
 }
 
-/** Estrae testo da PDF nel browser (pdfjs-dist). */
-export async function extractPdfTextFromFile(file: File): Promise<string> {
-  if (!isPdfFile(file)) return "";
+export type PdfPageText = { page: number; text: string };
+
+/** Estrae testo per pagina da PDF nel browser. */
+export async function extractPdfPagesFromFile(file: File): Promise<PdfPageText[]> {
+  if (!isPdfFile(file)) return [];
 
   const pdfjs = await import("pdfjs-dist");
   if (typeof window !== "undefined") {
@@ -21,7 +23,7 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
   const maxPages = Math.min(doc.numPages, MAX_PDF_PAGES_CLIENT);
-  const parts: string[] = [];
+  const pages: PdfPageText[] = [];
 
   for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
     const page = await doc.getPage(pageNum);
@@ -30,9 +32,16 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
       .map(item => ("str" in item ? String(item.str) : ""))
       .join(" ");
     if (line.trim()) {
-      parts.push(`--- PAGINA ${pageNum} ---\n${line.trim()}`);
+      pages.push({ page: pageNum, text: line.trim() });
     }
   }
 
-  return parts.join("\n\n");
+  return pages;
+}
+
+/** Estrae testo da PDF nel browser (pdfjs-dist) con marcatori pagina. */
+export async function extractPdfTextFromFile(file: File): Promise<string> {
+  const pages = await extractPdfPagesFromFile(file);
+  if (!pages.length) return "";
+  return pages.map(p => `--- PAGINA ${p.page} ---\n${p.text}`).join("\n\n");
 }

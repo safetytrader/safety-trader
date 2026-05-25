@@ -1,5 +1,5 @@
 import { MAX_DIRECT_FILE_BYTES, MAX_EXTRACTED_TEXT_CHARS, MIN_CLIENT_TEXT_CHARS } from "@/lib/analyzePayloadLimits";
-import { extractPdfTextFromFile } from "@/lib/clientPdfText";
+import { extractPdfPagesFromFile, extractPdfTextFromFile } from "@/lib/clientPdfText";
 import { cleanDocumentText, isTextSufficient } from "@/lib/documentTextUtils";
 
 export type AnalyzePlan =
@@ -48,20 +48,32 @@ export async function planAnalyzeRequest(
 
   if (isPdf(file)) {
     let rawText = "";
+    let pageTexts: { page: number; text: string }[] = [];
     try {
-      rawText = await extractPdfTextFromFile(file);
+      pageTexts = await extractPdfPagesFromFile(file);
+      rawText = pageTexts.length
+        ? pageTexts.map(p => `--- PAGINA ${p.page} ---\n${p.text}`).join("\n\n")
+        : await extractPdfTextFromFile(file);
     } catch (err) {
       console.warn("planAnalyzeRequest: estrazione PDF client fallita", err);
     }
 
     const extractedText = cleanDocumentText(rawText, MAX_EXTRACTED_TEXT_CHARS);
     if (isTextSufficient(extractedText, MIN_CLIENT_TEXT_CHARS)) {
+      const body: Record<string, unknown> = {
+        ...baseMeta(file, ids),
+        extractedText,
+      };
+      if (pageTexts.length) {
+        body.pageTexts = pageTexts.map(p => ({
+          page: p.page,
+          text: p.text,
+        }));
+        body.extractedPages = body.pageTexts;
+      }
       return {
         mode: "JSON_TEXT",
-        body: {
-          ...baseMeta(file, ids),
-          extractedText,
-        },
+        body,
       };
     }
 
@@ -90,13 +102,17 @@ export function buildAnalyzeFetchPayload(
   temporaryStoragePath?: string
 ) {
   if (plan.mode === "JSON_TEXT") {
+    const body = { ...plan.body };
+    if (temporaryStoragePath) {
+      body.temporaryStoragePath = temporaryStoragePath;
+    }
     return {
       mode: "JSON_TEXT",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders,
       },
-      body: JSON.stringify(plan.body),
+      body: JSON.stringify(body),
     };
   }
 

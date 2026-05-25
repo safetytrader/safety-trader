@@ -160,6 +160,7 @@ export async function POST(request: Request) {
     let mimeType = "application/pdf";
     let fileSize = 0;
     let clientExtractedText = "";
+    let clientPageTexts: { page: number; text: string }[] = [];
     let buffer: Buffer | null = null;
     let jsonTemporaryStoragePath = "";
 
@@ -183,17 +184,27 @@ export async function POST(request: Request) {
         return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
       }
 
-      if (jsonTemporaryStoragePath) {
-        routeMode = "TEMP_STORAGE_FILE";
-      } else if (hasExtractedText) {
+      const pagePayload = body.pageTexts ?? body.extractedPages;
+
+      if (hasExtractedText) {
         routeMode = "JSON_TEXT";
         clientExtractedText = cleanDocumentText(String(body.extractedText || ""));
+        if (Array.isArray(pagePayload)) {
+          clientPageTexts = pagePayload
+            .map(entry => ({
+              page: Number((entry as { page?: number })?.page),
+              text: String((entry as { text?: string })?.text || "").trim(),
+            }))
+            .filter(entry => Number.isFinite(entry.page) && entry.page > 0 && entry.text);
+        }
         if (!isTextSufficient(clientExtractedText)) {
           return jsonError(
             "Testo estratto insufficiente per l'analisi. Usa un PDF testuale o un file più piccolo.",
             400
           );
         }
+      } else if (jsonTemporaryStoragePath) {
+        routeMode = "TEMP_STORAGE_FILE";
       } else {
         return jsonError("Richiesta non valida.", 400);
       }
@@ -245,16 +256,20 @@ export async function POST(request: Request) {
       return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
 
-    if (routeMode === "TEMP_STORAGE_FILE") {
+    if (jsonTemporaryStoragePath) {
       try {
         tempPathToDelete = assertUserOwnsTempPath(jsonTemporaryStoragePath, user.id);
         buffer = await downloadAiTempFile(supabase, tempPathToDelete);
+        console.log("[AI] temp pdf loaded for references", buffer?.length || 0);
       } catch (pathErr) {
         const msg =
           pathErr instanceof Error && pathErr.message.includes("non valido")
             ? pathErr.message
             : TEMP_DOWNLOAD_FAILED_MSG;
-        return jsonError(msg, 403);
+        if (routeMode === "TEMP_STORAGE_FILE") {
+          return jsonError(msg, 403);
+        }
+        console.warn("[AI] temp pdf load failed (fast analysis continues)", msg);
       }
     }
 
@@ -322,6 +337,7 @@ export async function POST(request: Request) {
         );
 
     let posReferencesFound = 0;
+    let posReferencesSkipped = 0;
     let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
       "not_applicable";
 
@@ -330,11 +346,17 @@ export async function POST(request: Request) {
         fileName,
         mimeType,
         buffer,
-        documentText: routeMode === "JSON_TEXT" ? clientExtractedText : "",
+        pageTexts: clientPageTexts,
+        posChecks: applied.checks,
       });
 
       warnings.push(...posRefs.warnings);
+      posReferencesSkipped = Math.max(
+        0,
+        posRefs.referencesFoundRaw - posRefs.referencesFound
+      );
 
+      let refAppliedCount = 0;
       if (Object.keys(posRefs.checkRefs).length) {
         const refApplied = applyAiUpdates(
           {
@@ -346,6 +368,11 @@ export async function POST(request: Request) {
           },
           { checkRefs: posRefs.checkRefs }
         );
+        const refChanges = refApplied.applied_changes as Record<
+          string,
+          Record<string, unknown>
+        >;
+        refAppliedCount = Object.keys(refChanges.checkRefs || {}).length;
         applied = {
           ...refApplied,
           applied_changes: mergeAppliedChanges(
@@ -359,7 +386,8 @@ export async function POST(request: Request) {
         };
       }
 
-      posReferencesFound = posRefs.referencesFound;
+      posReferencesFound = refAppliedCount;
+
       if (posRefs.failed) {
         posRefsStatus = "failed";
       } else if (posReferencesFound > 0) {
@@ -391,6 +419,7 @@ export async function POST(request: Request) {
         analysis_mode: analysisMode,
         route_mode: routeMode,
         pos_references_found: posReferencesFound,
+        pos_references_skipped: posReferencesSkipped,
       },
       applied_changes: applied.applied_changes,
       skipped_changes: applied.skipped_changes,

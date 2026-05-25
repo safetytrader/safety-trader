@@ -123,7 +123,13 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       const plan = await planAnalyzeRequest(file, ids);
       let temporaryStoragePath;
 
-      if (plan.mode === "TEMP_STORAGE") {
+      const isPdfFile =
+        file.type === "application/pdf" ||
+        String(file.name || "").toLowerCase().endsWith(".pdf");
+      const needsTempUpload =
+        plan.mode === "TEMP_STORAGE" || (plan.mode === "JSON_TEXT" && isPdfFile);
+
+      if (needsTempUpload) {
         setStatusPhase("preparing");
         const {
           data: { user },

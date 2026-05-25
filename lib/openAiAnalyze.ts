@@ -1,23 +1,6 @@
 // @ts-nocheck
-import { CHECKLIST_ITEMS } from "@/lib/constants";
 
-const CHECKLIST_IDS_FOR_POS_REFS = CHECKLIST_ITEMS.map(
-  item => `${item.id}: ${item.label}`
-).join("\n");
-
-const POS_PAGE_REFERENCES_PROMPT = `Analizza il POS e individua, per ciascuna voce della checklist, la pagina in cui è presente l'informazione.
-Restituisci SOLO JSON valido, senza testo extra.
-Restituisci solo riferimenti specifici e attendibili.
-Non inventare pagine.
-Non usare la stessa pagina in modo generico per tutte le voci senza excerpt distinti.
-Ogni riferimento deve avere checklist_id (id reale), found, page (numero intero) ed excerpt (testo breve trovato nel documento, minimo 12 caratteri, specifico alla voce).
-Se una voce non è presente nel documento, omettila oppure usa found: false (non verrà applicata).
-Non modificare checks, allegati o maestranze.
-
-Voci checklist valide (usa esattamente checklist_id):
-${CHECKLIST_IDS_FOR_POS_REFS}
-
-Schema:
+const POS_REFS_SCHEMA = `Schema (fino a 30 elementi in checklist_evidence):
 {
   "checklist_evidence": [
     {
@@ -29,6 +12,32 @@ Schema:
   ],
   "warnings": []
 }`;
+
+function buildPosRefsGroupPrompt(checklistItems = [], groupLabel = "") {
+  const lines = (checklistItems || [])
+    .map(item => `- ${item.id}: [lettera ${item.lettera}] ${item.label}`)
+    .join("\n");
+
+  return `Analizza il POS e trova i riferimenti pagina SOLO per le seguenti voci checklist${groupLabel ? ` (${groupLabel})` : ""}.
+Per ogni voce elencata restituisci un elemento in checklist_evidence con:
+- checklist_id (id esatto)
+- found (true se trovi evidenza specifica nel documento, false altrimenti)
+- page (numero intero di pagina, solo se found true)
+- excerpt (testo breve copiato dal documento, minimo 12 caratteri, specifico per quella voce)
+
+Regole:
+- Restituisci SOLO JSON valido, senza testo extra.
+- Non inventare pagine.
+- Non usare riferimenti generici.
+- Non usare la stessa pagina per tutte le voci se l'excerpt non è specifico per ciascuna.
+- Molte voci possono stare sulla stessa pagina se gli excerpt sono diversi e specifici.
+- Se non trovi evidenza per una voce, usa found: false oppure ometti la voce.
+
+Voci da analizzare:
+${lines}
+
+${POS_REFS_SCHEMA}`;
+}
 
 const AI_SYSTEM_PROMPT = `Analisi documentale veloce per sicurezza cantieri.
 Restituisci SOLO JSON valido, senza testo extra.
@@ -111,7 +120,7 @@ Schema:
 }`;
 
 const MAX_OUTPUT_TOKENS = 600;
-const MAX_OUTPUT_TOKENS_POS_REFS = 2200;
+const MAX_OUTPUT_TOKENS_POS_REFS_GROUP = 1800;
 
 function buildHintsLine(hints = []) {
   if (!hints?.length) return "";
@@ -278,18 +287,23 @@ export async function analyzeDocumentWithOpenAI({
   ]);
 }
 
-/** Seconda analisi POS: solo riferimenti pagina checklist (file completo). */
-export async function analyzePosPageReferencesWithOpenAI({
+/** Seconda analisi POS: riferimenti pagina per un gruppo di voci (file). */
+export async function analyzePosPageReferencesGroupWithOpenAI({
   base64,
   mimeType,
   fileName,
+  checklistItems,
+  groupLabel,
 }: {
   base64: string;
   mimeType: string;
   fileName: string;
+  checklistItems: { id: string; label: string; lettera: string }[];
+  groupLabel?: string;
 }): Promise<string> {
   const safeMime = mimeType || "application/pdf";
   const fileData = `data:${safeMime};base64,${base64}`;
+  const prompt = buildPosRefsGroupPrompt(checklistItems, groupLabel);
 
   return callOpenAIResponses(
     [
@@ -300,21 +314,26 @@ export async function analyzePosPageReferencesWithOpenAI({
       },
       {
         type: "input_text",
-        text: POS_PAGE_REFERENCES_PROMPT,
+        text: prompt,
       },
     ],
-    MAX_OUTPUT_TOKENS_POS_REFS
+    MAX_OUTPUT_TOKENS_POS_REFS_GROUP
   );
 }
 
-/** Seconda analisi POS: riferimenti pagina da testo con marcatori di pagina. */
-export async function analyzePosPageReferencesTextWithOpenAI({
+/** Seconda analisi POS: riferimenti pagina per un gruppo (testo per pagina). */
+export async function analyzePosPageReferencesGroupTextWithOpenAI({
   fileName,
   documentText,
+  checklistItems,
+  groupLabel,
 }: {
   fileName: string;
   documentText: string;
+  checklistItems: { id: string; label: string; lettera: string }[];
+  groupLabel?: string;
 }): Promise<string> {
+  const prompt = buildPosRefsGroupPrompt(checklistItems, groupLabel);
   const userText = `Nome file: ${fileName || "documento.pdf"}
 
 Testo documento (con marcatori di pagina):
@@ -322,7 +341,7 @@ Testo documento (con marcatori di pagina):
 ${documentText}
 ---
 
-${POS_PAGE_REFERENCES_PROMPT}`;
+${prompt}`;
 
   return callOpenAIResponses(
     [
@@ -331,6 +350,6 @@ ${POS_PAGE_REFERENCES_PROMPT}`;
         text: userText,
       },
     ],
-    MAX_OUTPUT_TOKENS_POS_REFS
+    MAX_OUTPUT_TOKENS_POS_REFS_GROUP
   );
 }
