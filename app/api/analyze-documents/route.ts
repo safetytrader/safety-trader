@@ -9,6 +9,7 @@ import {
 import {
   applyPosPageReferences,
   extractDeterministicPosReferences,
+  normalizePagesFromPayload,
   stripErroneousBulkPageOneRefs,
 } from "@/lib/posReferences";
 import {
@@ -189,19 +190,13 @@ export async function POST(request: Request) {
         return jsonError("Cantiere non valido. Ricarica la pagina e riprova.", 400);
       }
 
-      const pagePayload = body.pageTexts ?? body.extractedPages;
+      const pagePayload =
+        body.extractedPages ?? body.pageTexts ?? body.pageText ?? body.pages;
 
       if (hasExtractedText) {
         routeMode = "JSON_TEXT";
         clientExtractedText = cleanDocumentText(String(body.extractedText || ""));
-        if (Array.isArray(pagePayload)) {
-          clientPageTexts = pagePayload
-            .map(entry => ({
-              page: Number((entry as { page?: number })?.page),
-              text: String((entry as { text?: string })?.text || "").trim(),
-            }))
-            .filter(entry => Number.isFinite(entry.page) && entry.page > 0 && entry.text);
-        }
+        clientPageTexts = normalizePagesFromPayload(pagePayload);
         if (!isTextSufficient(clientExtractedText)) {
           return jsonError(
             "Testo estratto insufficiente per l'analisi. Usa un PDF testuale o un file più piccolo.",
@@ -361,6 +356,7 @@ export async function POST(request: Request) {
     let posRefsExtractionFailed = false;
     let posRefsStatus: "not_applicable" | "found" | "unavailable" | "failed" =
       "not_applicable";
+    let debugPosRefs: Record<string, unknown> | null = null;
 
     if (!built.isNomina && isPosDocumentType(documentType)) {
       applied = {
@@ -378,9 +374,11 @@ export async function POST(request: Request) {
         buffer: refsBuffer,
         pageTexts: clientPageTexts,
         posChecks: applied.checks,
+        posCheckRefs: applied.checkRefs,
         temporaryStoragePath: jsonTemporaryStoragePath || undefined,
       });
 
+      debugPosRefs = posRefs.debug_pos_refs;
       posRefsSource = posRefs.source;
       posRefsNoText = posRefs.noText;
       posRefsExtractionFailed = posRefs.extractionFailed;
@@ -470,10 +468,12 @@ export async function POST(request: Request) {
       analysis_ui: built.analysisUi || null,
       is_nomina: Boolean(built.isNomina),
       pos_references_found: posReferencesFound,
+      pos_references_count: posReferencesFound,
       pos_refs_status: posRefsStatus,
       pos_refs_source: posRefsSource,
       pos_refs_no_text: posRefsNoText,
       pos_refs_extraction_failed: posRefsExtractionFailed,
+      debug_pos_refs: debugPosRefs,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,

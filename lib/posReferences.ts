@@ -1,8 +1,6 @@
 // @ts-nocheck
-import {
-  getPosChecklistItemsForReferences,
-  isFieldEmpty,
-} from "@/lib/documentAnalysis";
+import { CHECKLIST_ITEMS } from "@/lib/constants";
+import { POS_CHECKLIST_EXCLUDED_IDS, isFieldEmpty } from "@/lib/documentAnalysis";
 import { extractPdfPagesFromBuffer } from "@/lib/pdfPagesServer";
 
 export const POS_SCANNED_WARNING =
@@ -19,8 +17,8 @@ const POS_RANGE_ITEM_IDS = new Set(["a3"]);
 export const POS_SECTION_PATTERNS: Record<string, RegExp[]> = {
   a1: [
     /dati identificativi impresa affidataria/,
-    /dati impresa.*ragione sociale/,
-    /ragione sociale.*datore di lavoro/,
+    /\bdati impresa\b/,
+    /\bragione sociale\b/,
   ],
   a2: [
     /specifiche attivita e singole lavorazioni svolte in cantiere/,
@@ -65,7 +63,7 @@ export const POS_SECTION_PATTERNS: Record<string, RegExp[]> = {
     /elenco delle opere provvisionali macchine e impianti utilizzati in cantiere/,
     /macchine:/,
     /attrezzature:/,
-    /impianti/,
+    /\bimpianti\b/,
   ],
   e1: [
     /sostanze pericolose/,
@@ -93,7 +91,6 @@ export const POS_SECTION_PATTERNS: Record<string, RegExp[]> = {
   ],
 };
 
-/** Compatibilità export legacy. */
 export const POS_REFERENCE_KEYWORDS: Record<string, string[]> = Object.fromEntries(
   Object.entries(POS_SECTION_PATTERNS).map(([id, patterns]) => [
     id,
@@ -101,14 +98,68 @@ export const POS_REFERENCE_KEYWORDS: Record<string, string[]> = Object.fromEntri
   ])
 );
 
+export type PdfPageEntry = { page: number; text: string };
+
 export function normalizePageText(value = "") {
   return String(value || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[''`´]/g, " ")
     .replace(/[^\w\s:]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Unifica extractedPages / pageTexts / pageText / pages dal body JSON. */
+export function normalizePagesFromPayload(input: unknown): PdfPageEntry[] {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input
+      .map(entry => {
+        const row = entry as Record<string, unknown>;
+        const page = Number(row.page ?? row.pageNumber ?? row.page_number);
+        const text = String(row.text ?? row.content ?? "").trim();
+        return { page, text };
+      })
+      .filter(p => Number.isFinite(p.page) && p.page > 0);
+  }
+
+  if (typeof input === "object") {
+    return Object.entries(input as Record<string, unknown>)
+      .map(([key, value]) => ({
+        page: Number(key),
+        text: String(value ?? "").trim(),
+      }))
+      .filter(p => Number.isFinite(p.page) && p.page > 0);
+  }
+
+  return [];
+}
+
+function isChecklistSi(value: unknown) {
+  return String(value ?? "").trim().toLowerCase() === "si";
+}
+
+/**
+ * Voci POS da referenziare: stato finale "si" e checkRefs vuoto.
+ * Indipendente da applied_changes / skipped_changes.
+ */
+export function buildPosItemsToReference(
+  finalChecks: Record<string, string> = {},
+  finalCheckRefs: Record<string, string> = {}
+) {
+  return CHECKLIST_ITEMS.filter(item => {
+    if (POS_CHECKLIST_EXCLUDED_IDS.includes(item.id)) return false;
+    if (!isChecklistSi(finalChecks[item.id])) return false;
+    if (!isFieldEmpty(finalCheckRefs[item.id])) return false;
+    return true;
+  }).map(item => ({
+    id: item.id,
+    label: item.label,
+    lettera: item.lettera,
+  }));
 }
 
 function patternLabel(pattern: RegExp | string) {
@@ -129,13 +180,8 @@ export type PagePatternMatch = {
   pattern: string | null;
 };
 
-/**
- * Prima pagina (>= 2) che contiene almeno un titolo forte.
- * I pattern sono provati dal più specifico; tra le pagine si scorre in ordine.
- * Mai pagina 1.
- */
 export function findPageByPatterns(
-  pages: { page: number; text: string }[],
+  pages: PdfPageEntry[],
   patterns: (RegExp | string)[]
 ): PagePatternMatch {
   if (!patterns?.length) return { page: null, pattern: null };
@@ -161,13 +207,8 @@ export type PageRangePatternMatch = {
   pages: number[];
 };
 
-/**
- * Pagine che contengono almeno un pattern (mai pag. 1).
- * Se due pagine consecutive hanno match distinti → "pag. N-M".
- * Altrimenti la prima pagina trovata in ordine documento.
- */
 export function findPageRangeByPatterns(
-  pages: { page: number; text: string }[],
+  pages: PdfPageEntry[],
   patterns: (RegExp | string)[]
 ): PageRangePatternMatch {
   if (!patterns?.length) {
@@ -212,14 +253,13 @@ export function findPageRangeByPatterns(
   };
 }
 
-function countUsefulChars(pages = []) {
+function countUsefulChars(pages: PdfPageEntry[] = []) {
   return pages.reduce(
     (sum, p) => sum + normalizePageText(p.text).replace(/\s/g, "").length,
     0
   );
 }
 
-/** Rimuove riferimenti errati automatici "pag. 1" prima di nuovi match POS. */
 export function stripErroneousBulkPageOneRefs(checkRefs = {}) {
   const out = { ...checkRefs };
   let discarded = 0;
@@ -239,11 +279,20 @@ export function stripErroneousBulkPageOneRefs(checkRefs = {}) {
   return out;
 }
 
+export type PosRefMatchDebug = {
+  id: string;
+  label: string;
+  found: boolean;
+  page: string | number | null;
+  matchedPattern: string | null;
+};
+
 export function findDeterministicCheckRefs(
-  pages: { page: number; text: string }[] = [],
-  checklistItems: { id: string }[] = []
+  pages: PdfPageEntry[] = [],
+  checklistItems: { id: string; label?: string }[] = []
 ) {
   const checkRefs: Record<string, string> = {};
+  const matches: PosRefMatchDebug[] = [];
 
   for (const item of checklistItems) {
     const patterns = POS_SECTION_PATTERNS[item.id];
@@ -267,7 +316,15 @@ export function findDeterministicCheckRefs(
       matchedPattern != null &&
       !(typeof matchedPageOrRange === "number" && matchedPageOrRange <= 1);
 
-    console.log("[POS refs exact]", item.id, matchedPageOrRange, matchedPattern);
+    console.log("[POS refs exact] match", item.id, matchedPageOrRange, matchedPattern);
+
+    matches.push({
+      id: item.id,
+      label: item.label || item.id,
+      found: accepted,
+      page: matchedPageOrRange,
+      matchedPattern,
+    });
 
     if (!accepted) continue;
 
@@ -277,13 +334,11 @@ export function findDeterministicCheckRefs(
         : String(matchedPageOrRange);
   }
 
-  const appliedCount = Object.keys(checkRefs).length;
-  console.log("[POS refs exact] applied", appliedCount);
+  console.log("[POS refs exact] applied", Object.keys(checkRefs).length);
 
-  return checkRefs;
+  return { checkRefs, matches };
 }
 
-/** Applica riferimenti POS senza normalizzare (preserva es. pag. 7-8). Non sovrascrive manuali. */
 export function applyPosPageReferences(
   currentCheckRefs: Record<string, string> = {},
   incomingCheckRefs: Record<string, string> = {}
@@ -315,15 +370,28 @@ export type DeterministicPosRefsResult = {
   source: "deterministic" | "page_text" | "unavailable";
   noText: boolean;
   extractionFailed: boolean;
+  debug_pos_refs: {
+    pagesCount: number;
+    totalChars: number;
+    itemsToReference: string[];
+    matches: PosRefMatchDebug[];
+  };
 };
 
 export async function extractDeterministicPosReferences(options: {
   buffer?: Buffer | null;
-  pageTexts?: { page: number; text: string }[];
+  pageTexts?: PdfPageEntry[];
   posChecks?: Record<string, string>;
+  posCheckRefs?: Record<string, string>;
   temporaryStoragePath?: string;
-  existingCheckRefs?: Record<string, string>;
 }): Promise<DeterministicPosRefsResult> {
+  const emptyDebug = {
+    pagesCount: 0,
+    totalChars: 0,
+    itemsToReference: [] as string[],
+    matches: [] as PosRefMatchDebug[],
+  };
+
   if (options.temporaryStoragePath) {
     console.log("[POS refs] temp path", options.temporaryStoragePath);
   }
@@ -331,15 +399,28 @@ export async function extractDeterministicPosReferences(options: {
     console.log("[POS refs] downloaded file bytes", options.buffer.length);
   }
 
-  const items = getPosChecklistItemsForReferences(options.posChecks || {});
-  console.log("[POS refs] checklist items", items.length);
+  const finalChecks = options.posChecks || {};
+  const finalCheckRefs = options.posCheckRefs || {};
+  const itemsToReference = buildPosItemsToReference(finalChecks, finalCheckRefs);
 
-  let pages: { page: number; text: string }[] = [];
+  console.log(
+    "[POS refs exact] itemsToReference",
+    itemsToReference.map(i => i.id)
+  );
+
+  const clientPages = normalizePagesFromPayload(options.pageTexts);
+  let pages: PdfPageEntry[] = [];
+  let source: "deterministic" | "page_text" | "unavailable" = "unavailable";
   let extractionFailed = false;
 
-  if (options.buffer?.length) {
+  if (clientPages.length) {
+    pages = clientPages;
+    source = "page_text";
+    console.log("[POS refs] using client page payload", pages.length);
+  } else if (options.buffer?.length) {
     try {
       pages = await extractPdfPagesFromBuffer(options.buffer);
+      source = "deterministic";
     } catch (err) {
       extractionFailed = true;
       console.error("[POS refs] extraction error", err);
@@ -350,41 +431,43 @@ export async function extractDeterministicPosReferences(options: {
           `${POS_EXTRACTION_TECHNICAL_WARNING} ${err?.message ? `(${String(err.message).slice(0, 120)})` : ""}`.trim(),
         ],
         referencesFound: 0,
-        referencesFoundRaw: 0,
+        referencesFoundRaw: itemsToReference.length,
         failed: true,
         source: "unavailable",
         noText: false,
         extractionFailed: true,
+        debug_pos_refs: {
+          ...emptyDebug,
+          itemsToReference: itemsToReference.map(i => i.id),
+        },
       };
     }
-  } else if (options.pageTexts?.length) {
-    pages = options.pageTexts
-      .map(p => ({
-        page: Number(p.page),
-        text: String(p.text || "").trim(),
-      }))
-      .filter(p => Number.isFinite(p.page) && p.page > 0);
-    console.log("[POS refs] using client extractedPages", pages.length);
   }
 
   const totalChars = countUsefulChars(pages);
-  console.log("[POS refs] pages extracted", pages.length);
-  console.log("[POS refs] total text chars", totalChars);
+  console.log("[POS refs exact] pagesCount", pages.length);
+  console.log("[POS refs exact] totalChars", totalChars);
   console.log("[POS refs] sample page 1", pages[0]?.text?.slice(0, 300) || "");
 
   const noText = pages.length > 0 && totalChars < MIN_SCANNED_TEXT_CHARS;
   console.log("[POS refs] scanned or no text", noText);
 
-  if (!pages.length && !options.buffer?.length && !options.pageTexts?.length) {
+  if (!pages.length) {
     return {
       checkRefs: {},
       warnings: [POS_EXTRACTION_TECHNICAL_WARNING],
       referencesFound: 0,
-      referencesFoundRaw: 0,
+      referencesFoundRaw: itemsToReference.length,
       failed: true,
       source: "unavailable",
       noText: false,
       extractionFailed: true,
+      debug_pos_refs: {
+        pagesCount: 0,
+        totalChars: 0,
+        itemsToReference: itemsToReference.map(i => i.id),
+        matches: [],
+      },
     };
   }
 
@@ -394,25 +477,57 @@ export async function extractDeterministicPosReferences(options: {
       checkRefs: {},
       warnings: [POS_SCANNED_WARNING],
       referencesFound: 0,
-      referencesFoundRaw: 0,
+      referencesFoundRaw: itemsToReference.length,
       failed: false,
-      source: "unavailable",
+      source,
       noText: true,
       extractionFailed: false,
+      debug_pos_refs: {
+        pagesCount: pages.length,
+        totalChars,
+        itemsToReference: itemsToReference.map(i => i.id),
+        matches: [],
+      },
     };
   }
 
-  const checkRefs = findDeterministicCheckRefs(pages, items);
+  if (!itemsToReference.length) {
+    console.log("[POS refs exact] applied", 0);
+    return {
+      checkRefs: {},
+      warnings: [],
+      referencesFound: 0,
+      referencesFoundRaw: 0,
+      failed: false,
+      source,
+      noText: false,
+      extractionFailed: false,
+      debug_pos_refs: {
+        pagesCount: pages.length,
+        totalChars,
+        itemsToReference: [],
+        matches: [],
+      },
+    };
+  }
+
+  const { checkRefs, matches } = findDeterministicCheckRefs(pages, itemsToReference);
   const foundCount = Object.keys(checkRefs).length;
 
   return {
     checkRefs,
     warnings: [],
     referencesFound: foundCount,
-    referencesFoundRaw: items.length,
+    referencesFoundRaw: itemsToReference.length,
     failed: false,
-    source: options.buffer?.length ? "deterministic" : "page_text",
+    source,
     noText: false,
     extractionFailed: false,
+    debug_pos_refs: {
+      pagesCount: pages.length,
+      totalChars,
+      itemsToReference: itemsToReference.map(i => i.id),
+      matches,
+    },
   };
 }
