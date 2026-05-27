@@ -69,9 +69,10 @@ function formatExtractedLabel(key) {
   return EXTRACTED_FIELD_LABELS[normalized] || normalized.replace(/_/g, " ");
 }
 
-function pickAnalyzeFile(fileList) {
-  const files = Array.from(fileList || []);
-  return files.find(f => f.type === "application/pdf" || f.type?.startsWith("image/")) || null;
+function pickAnalyzeFiles(fileList) {
+  return Array.from(fileList || []).filter(
+    f => f.type === "application/pdf" || f.type?.startsWith("image/")
+  );
 }
 
 async function parseJsonResponse(res) {
@@ -93,9 +94,11 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
   const [statusPhase, setStatusPhase] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
+  const [batchQueue, setBatchQueue] = useState([]);
   const [resultModal, setResultModal] = useState(null);
 
-  const runAnalysis = async file => {
+  const runAnalysis = async (file, options = {}) => {
+    const { silentResult = false } = options;
     if (!file || analyzing) return;
 
     setAnalyzing(true);
@@ -185,27 +188,30 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
       const isPos =
         String(data.document_type || "").toUpperCase() === "POS";
 
-      setResultModal({
-        error: false,
-        document_type: data.document_type,
-        summary: data.summary,
-        extracted_data: data.extracted_data,
-        applied_lines: formatAppliedSummary(data.applied_changes, {
-          isNomina: data.is_nomina,
-        }),
-        skipped_lines: formatSkippedSummary(data.skipped_changes, {
-          isNomina: data.is_nomina,
-        }),
-        warnings: data.warnings || [],
-        analysis_ui: data.analysis_ui || null,
-        is_nomina: Boolean(data.is_nomina),
-        is_pos: isPos,
-        pos_refs_status: data.pos_refs_status,
-        pos_refs_source: data.pos_refs_source,
-        pos_refs_no_text: Boolean(data.pos_refs_no_text),
-        pos_refs_extraction_failed: Boolean(data.pos_refs_extraction_failed),
-        pos_references_found: data.pos_references_found ?? 0,
-      });
+      if (!silentResult) {
+        setResultModal({
+          error: false,
+          document_type: data.document_type,
+          summary: data.summary,
+          extracted_data: data.extracted_data,
+          applied_lines: formatAppliedSummary(data.applied_changes, {
+            isNomina: data.is_nomina,
+          }),
+          skipped_lines: formatSkippedSummary(data.skipped_changes, {
+            isNomina: data.is_nomina,
+          }),
+          warnings: data.warnings || [],
+          analysis_ui: data.analysis_ui || null,
+          is_nomina: Boolean(data.is_nomina),
+          is_pos: isPos,
+          pos_refs_status: data.pos_refs_status,
+          pos_refs_source: data.pos_refs_source,
+          pos_refs_no_text: Boolean(data.pos_refs_no_text),
+          pos_refs_extraction_failed: Boolean(data.pos_refs_extraction_failed),
+          pos_references_found: data.pos_references_found ?? 0,
+        });
+      }
+      return { ok: true };
     } catch (err) {
       if (uploadedTempPath) {
         try {
@@ -217,15 +223,18 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
 
       const message = err?.message || "Analisi AI non disponibile. Riprova tra poco.";
       setErrorMessage(message);
-      setResultModal({
-        error: true,
-        summary: message,
-        document_type: null,
-        extracted_data: null,
-        applied_lines: [],
-        skipped_lines: [],
-        warnings: [],
-      });
+      if (!silentResult) {
+        setResultModal({
+          error: true,
+          summary: message,
+          document_type: null,
+          extracted_data: null,
+          applied_lines: [],
+          skipped_lines: [],
+          warnings: [],
+        });
+      }
+      return { ok: false, error: message };
     } finally {
       setAnalyzing(false);
       setStatusPhase("idle");
@@ -233,13 +242,68 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
     }
   };
 
+  const runBatchAnalysis = async files => {
+    if (!files.length || analyzing) return;
+
+    const queue = files.map((file, idx) => ({
+      id: `${Date.now()}-${idx}`,
+      name: file.name,
+      status: "In attesa",
+      error: "",
+    }));
+    setBatchQueue(queue);
+    setResultModal(null);
+    setErrorMessage("");
+
+    let completed = 0;
+    let failed = 0;
+
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      setBatchQueue(prev =>
+        prev.map((q, idx) => (idx === i ? { ...q, status: "Analisi in corso" } : q))
+      );
+      const result = await runAnalysis(file, { silentResult: true });
+      if (result?.ok) {
+        completed += 1;
+        setBatchQueue(prev =>
+          prev.map((q, idx) => (idx === i ? { ...q, status: "Completato", error: "" } : q))
+        );
+      } else {
+        failed += 1;
+        setBatchQueue(prev =>
+          prev.map((q, idx) =>
+            idx === i
+              ? { ...q, status: "Errore", error: result?.error || "Analisi non riuscita" }
+              : q
+          )
+        );
+      }
+    }
+
+    setResultModal({
+      error: failed > 0,
+      summary: `${files.length} file analizzati, ${completed} completati, ${failed} con errore`,
+      document_type: null,
+      extracted_data: null,
+      applied_lines: [],
+      skipped_lines: [],
+      warnings: [],
+      batch: true,
+    });
+  };
+
   const handleSelectedFiles = fileList => {
-    const file = pickAnalyzeFile(fileList);
-    if (!file) {
+    const files = pickAnalyzeFiles(fileList);
+    if (!files.length) {
       setErrorMessage("Seleziona un file PDF o un'immagine.");
       return;
     }
-    runAnalysis(file);
+    if (files.length === 1) {
+      runAnalysis(files[0]);
+      return;
+    }
+    runBatchAnalysis(files);
   };
 
   const handleRetry = () => {
@@ -296,6 +360,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
               <input
                 ref={fileRef}
                 type="file"
+                multiple
                 accept=".pdf,image/*"
                 className="upload-input"
                 disabled={analyzing}
@@ -361,6 +426,20 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                 <button type="button" className="upload-btn upload-btn-secondary" onClick={handleRetry}>
                   Riprova
                 </button>
+              </div>
+            ) : null}
+
+            {batchQueue.length > 0 ? (
+              <div className="upload-status-card">
+                <span className="upload-status-text">Coda analisi</span>
+                <ul className="upload-ai-modal-list upload-ai-modal-list-muted">
+                  {batchQueue.map(item => (
+                    <li key={item.id}>
+                      {item.name}: {item.status}
+                      {item.error ? ` (${item.error})` : ""}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </div>

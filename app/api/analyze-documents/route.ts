@@ -333,6 +333,7 @@ export async function POST(request: Request) {
           maestranze: current.maestranze,
           applied_changes: {},
           skipped_changes: buildNominaSkippedChanges(documentType),
+          warnings: [],
         }
       : applyAiUpdates(
           {
@@ -344,6 +345,22 @@ export async function POST(request: Request) {
           },
           built.updates
         );
+    if (Array.isArray(applied.warnings) && applied.warnings.length) {
+      warnings.push(...applied.warnings);
+    }
+
+    if (!built.isNomina && built.blockedReason) {
+      applied = {
+        ...applied,
+        skipped_changes: mergeSkippedChanges(applied.skipped_changes, {
+          document: {
+            reason: built.blockedReason,
+            existing: "nessun aggiornamento",
+            proposed: documentType,
+          },
+        }),
+      };
+    }
 
     let posReferencesFound = 0;
     let posReferencesSkipped = 0;

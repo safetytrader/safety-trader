@@ -4,6 +4,7 @@ import {
   deduplicateWorkers,
   isFormationLikeQualifica,
   nameSimilarity,
+  normalizeCodiceFiscale,
   normalizeWorkerName,
 } from "@/lib/utils";
 
@@ -634,12 +635,44 @@ export function resolveVisuraScadenza(extracted = {}) {
   return null;
 }
 
-export function resolveIdoneitaScadenza(extracted = {}) {
-  return (
-    normalizeDate(extracted.data_scadenza) ||
-    normalizeDate(extracted.data_giudizio) ||
-    normalizeDate(extracted.data_emissione)
+function parseIdoneitaPeriodYears(extracted = {}) {
+  const candidates = [
+    extracted.periodicita,
+    extracted.periodicita_anni,
+    extracted.nuova_visita,
+    extracted.note,
+    extracted.summary,
+  ]
+    .filter(Boolean)
+    .map(v => String(v).toLowerCase());
+
+  for (const text of candidates) {
+    const m = text.match(/(\d+)\s*ann/);
+    if (m) {
+      const years = Number(m[1]);
+      if (Number.isFinite(years) && years > 0 && years <= 10) return years;
+    }
+  }
+  return null;
+}
+
+export function resolveIdoneitaScadenza(extracted = {}, mappingWarnings = []) {
+  const explicit = normalizeDate(extracted.data_scadenza);
+  if (explicit) return explicit;
+
+  const visita = normalizeDate(
+    extracted.data_visita || extracted.data_giudizio || extracted.data_emissione
   );
+  const years = parseIdoneitaPeriodYears(extracted);
+  if (visita && years) {
+    return addYearsIsoDate(visita, years);
+  }
+  if (visita && !years) {
+    mappingWarnings.push(
+      "Idoneità: data visita rilevata ma periodicità mancante, scadenza non calcolata automaticamente."
+    );
+  }
+  return null;
 }
 
 function formationYearsForKey(courseKey) {
@@ -668,14 +701,122 @@ export function resolveWorkerCourseFieldValue(extracted = {}, courseKey) {
   return base;
 }
 
-const PREPOSTO_CLASSIFICATION_RE =
-  /preposto|preposti|organizzazione\s+(di\s+)?cantiere\s+(per\s+)?preposti|formazione\s+preposto|aggiornamento\s+preposto/;
+const GENERIC_FORMATION_ONLY_RE =
+  /(^|\s)(corso|formazione|sicurezza|art\.?\s*37|d\.?lgs\.?\s*81\/?08|accordo\s+stato[\s-]regioni)(\s|$)/;
 
-const ANTINCENDIO_CLASSIFICATION_RE =
-  /antincendio|addett[oa]?\s+(alla\s+)?antincendio|prevenzione\s+incendi|lotta\s+antincendio|gestione\s+(delle\s+)?emergenze|emergenze\s+antincendio|rischio\s+(basso|medio|elevato|alto)(\s+antincendio|\s+incendi)?|livello\s+[123](\s+antincendio|\s+incendi)?/;
+const DOC_CLASSIFICATION_RULES = [
+  {
+    type: "UNILAV",
+    patterns: [
+      /comunicazione obbligatoria/,
+      /trasformazione/,
+      /assunzione/,
+      /proroga/,
+      /cessazione/,
+      /anagrafica lavoratore/,
+      /tipo rapporto/,
+    ],
+  },
+  {
+    type: "IDONEITA",
+    patterns: [
+      /certificat[oa] di idoneita alla mansione/,
+      /idoneo con prescrizioni/,
+      /\bidoneo\b/,
+      /medico competente/,
+      /visita medica/,
+      /\bmansione\b/,
+    ],
+  },
+  {
+    type: "CONSEGNA_DPI",
+    patterns: [
+      /dichiarazione consegna dpi/,
+      /verbale consegna dpi/,
+      /consegna dispositivi di protezione individuale/,
+      /elmetto/,
+      /scarpe antinfortunistiche/,
+      /imbracatura/,
+      /\bguanti\b/,
+      /occhiali/,
+    ],
+  },
+  {
+    type: "RLS",
+    patterns: [
+      /rappresentanti dei lavoratori per la sicurezza/,
+      /\bcorso rls\b/,
+      /\bformazione rls\b/,
+      /\brls\b/,
+    ],
+  },
+  { type: "RSPP", patterns: [/\brspp\b/, /responsabile del servizio di prevenzione/] },
+  { type: "ASPP", patterns: [/\baspp\b/, /addetto servizio prevenzione/] },
+  {
+    type: "PREPOSTO",
+    patterns: [
+      /\bpreposto\b/,
+      /corso preposto/,
+      /aggiornamento preposto/,
+      /preposto di cantiere/,
+    ],
+  },
+  {
+    type: "ANTINCENDIO",
+    patterns: [
+      /antincendio/,
+      /prevenzione incendi/,
+      /addetto emergenza incendio/,
+      /evacuazione/,
+      /livello [123]/,
+    ],
+  },
+  {
+    type: "PRIMO_SOCCORSO",
+    patterns: [/primo soccorso/, /addetto primo soccorso/, /gruppo [abc]/],
+  },
+  {
+    type: "GRU",
+    patterns: [
+      /\bgru\b/,
+      /gru a torre/,
+      /gru mobile/,
+      /gru per autocarro/,
+      /conduzione di gru/,
+    ],
+  },
+  {
+    type: "MMT",
+    patterns: [
+      /macchine movimento terra/,
+      /movimento terra/,
+      /escavatore/,
+      /pala caricatrice/,
+      /\bterna\b/,
+      /autoribaltabile/,
+    ],
+  },
+  { type: "PLE", patterns: [/\bple\b/, /piattaforme di lavoro elevabili/] },
+  { type: "PONTEGGI", patterns: [/ponteggi/, /ponteggio metallico/] },
+  { type: "SPAZI_CONFINATI", patterns: [/spazi confinati/, /ambienti confinati/] },
+  {
+    type: "FORMAZIONE_BASE_SPECIFICA",
+    patterns: [
+      /formazione lavoratori/,
+      /generale e specifica|base e specifica/,
+      /rischio (alto|medio|basso)/,
+    ],
+    requireAll: true,
+  },
+  {
+    type: "FORMAZIONE_SPECIFICA",
+    patterns: [/formazione specifica/, /rischio (alto|medio|basso)/],
+  },
+  { type: "FORMAZIONE_BASE", patterns: [/formazione generale/, /formazione lavoratori/] },
+];
 
-const GRU_CLASSIFICATION_RE =
-  /\bgru\b|gruista|gru\s+a\s+torre|gru\s+mobile|gru\s+per\s+autocarro|conduzione\s+di\s+gru|addett[oi]\s+(alla\s+)?conduzione\s+di\s+gru|operatore\s+gru|attestato\s+gru|abilitazione\s+gru|rotazione\s+in\s+basso|rotazione\s+in\s+alto|art\.\s*73.*81|attrezzatur.*gru/;
+const FORMAZIONE_EXCLUSION_RE =
+  /(\brls\b|preposto|antincendio|primo soccorso|\bgru\b|escavatore|macchine movimento terra|\bple\b|ponteggi)/;
 
 const NOMINA_DESIGNATION_RE =
   /\b(nomina|designazione|incarico|incaricat[oa]|designat[oa]|conferimento\s+incarico|per\s+accettazione|firma\s+per\s+accettazione|lavoratore\s+incaricat[oa]|addett[oa]\s+designat[oa])\b/;
@@ -788,28 +929,96 @@ export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
     return resolveNominaSubtype(text);
   }
 
-  if (PREPOSTO_CLASSIFICATION_RE.test(text)) return "PREPOSTO";
-  if (ANTINCENDIO_CLASSIFICATION_RE.test(text)) return "ANTINCENDIO";
-  if (GRU_CLASSIFICATION_RE.test(text)) return "GRU";
+  for (const rule of DOC_CLASSIFICATION_RULES) {
+    const matches = rule.patterns.filter(pattern => pattern.test(text));
+    if (!matches.length) continue;
+    if (rule.requireAll && matches.length < rule.patterns.length) continue;
+    if (
+      (rule.type === "FORMAZIONE_BASE_SPECIFICA" ||
+        rule.type === "FORMAZIONE_SPECIFICA" ||
+        rule.type === "FORMAZIONE_BASE") &&
+      FORMAZIONE_EXCLUSION_RE.test(text)
+    ) {
+      continue;
+    }
+    return rule.type;
+  }
 
   const type = payload.document_type;
-  return type == null || type === "" ? "ALTRO" : String(type);
+  if (type == null || type === "") return "DOCUMENTO_SCONOSCIUTO";
+  const aiType = String(type).toUpperCase();
+  if (
+    (aiType === "FORMAZIONE_BASE" ||
+      aiType === "FORMAZIONE_SPECIFICA" ||
+      aiType === "FORMAZIONE_BASE_SPECIFICA") &&
+    FORMAZIONE_EXCLUSION_RE.test(text)
+  ) {
+    return "DOCUMENTO_SCONOSCIUTO";
+  }
+  if (aiType === "ANTINCENDIO" && !/antincendio|incendio|evacuazione|livello [123]/.test(text)) {
+    return "DOCUMENTO_SCONOSCIUTO";
+  }
+  if (aiType === "MMT" && !/movimento terra|escavatore|terna|pala caricatrice/.test(text)) {
+    return "DOCUMENTO_SCONOSCIUTO";
+  }
+  if (aiType === "RLS" && !/\brls\b|rappresentanti dei lavoratori per la sicurezza/.test(text)) {
+    return "DOCUMENTO_SCONOSCIUTO";
+  }
+  if (aiType === "CONSEGNA_DPI" && !/consegna .*dpi|dispositivi di protezione individuale/.test(text)) {
+    return "DOCUMENTO_SCONOSCIUTO";
+  }
+  if (aiType === "ALTRO" || aiType === "UNKNOWN") return "DOCUMENTO_SCONOSCIUTO";
+  return aiType;
+}
+
+function hasTypeHardEvidence(documentType, payload = {}, fileName = "") {
+  const text = safeLower(
+    classificationBlob(payload, fileName)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+  );
+  switch (String(documentType || "").toUpperCase()) {
+    case "ANTINCENDIO":
+      return /antincendio|incendio|emergenza incendio|evacuazione|livello [123]/.test(text);
+    case "RLS":
+      return /\brls\b|rappresentanti dei lavoratori per la sicurezza/.test(text);
+    case "MMT":
+      return /movimento terra|escavatore|pala caricatrice|terna|macchine movimento terra/.test(
+        text
+      );
+    case "FORMAZIONE_BASE_SPECIFICA":
+      return /formazione lavoratori/.test(text) && /generale|specifica|rischio/.test(text);
+    case "CONSEGNA_DPI":
+      return /consegna .*dpi|dispositivi di protezione individuale|verbale consegna dpi/.test(
+        text
+      );
+    default:
+      return true;
+  }
 }
 
 function findMaestranzaIndex(maestranze, worker) {
-  const cf = String(worker.codiceFiscale || "")
-    .replace(/\s/g, "")
-    .toUpperCase();
+  const cf = normalizeCodiceFiscale(worker.codiceFiscale || "");
   if (cf) {
     const byCf = maestranze.findIndex(m => {
-      const mcf = String(m.codiceFiscale || "")
-        .replace(/\s/g, "")
-        .toUpperCase();
+      const mcf = normalizeCodiceFiscale(m.codiceFiscale || "");
       return mcf && mcf === cf;
     });
-    if (byCf >= 0) return byCf;
+    if (byCf >= 0) return { index: byCf, ambiguous: false };
   }
-  return maestranze.findIndex(m => nameSimilarity(m.nome, worker.nome) >= 0.75);
+
+  const candidates = maestranze
+    .map((m, index) => ({ index, score: nameSimilarity(m.nome, worker.nome) }))
+    .filter(x => x.score >= 0.8)
+    .sort((a, b) => b.score - a.score);
+
+  if (candidates.length === 1) {
+    return { index: candidates[0].index, ambiguous: false };
+  }
+  if (candidates.length > 1) {
+    return { index: -1, ambiguous: true };
+  }
+  return { index: -1, ambiguous: false };
 }
 
 function shouldUpdateBooleanMaestranzaField(currentValue, newValue) {
@@ -915,9 +1124,7 @@ function workerFromExtracted(extracted, fields = {}, options = {}) {
   const nome = normalizeWorkerName(extracted.lavoratore || "");
   if (!nome) return null;
   const w = { nome, ...fields };
-  const cf = String(extracted.codice_fiscale_lavoratore || "")
-    .replace(/\s/g, "")
-    .toUpperCase();
+  const cf = normalizeCodiceFiscale(extracted.codice_fiscale_lavoratore || "");
   if (cf) w.codiceFiscale = cf;
   if (options.withQualifica) {
     const qualifica = extractWorkerQualifica(extracted);
@@ -989,7 +1196,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       break;
     }
     case "IDONEITA": {
-      const idoneitaIso = resolveIdoneitaScadenza(extracted);
+      const idoneitaIso = resolveIdoneitaScadenza(extracted, mappingWarnings);
       const idoneita = idoneitaIso ? toAppDateFromIso(idoneitaIso) : null;
       const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {}, {
         withQualifica: true,
@@ -1003,6 +1210,28 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
       const unilav = resolveUnilavFromExtracted(extracted, mappingWarnings);
       if (unilav) w.unilav = unilav;
       updates.maestranze.push(w);
+      break;
+    }
+    case "CONSEGNA_DPI": {
+      const w = workerFromExtracted(extracted, { dpi: true });
+      if (w) updates.maestranze.push(w);
+      updates.allegati["Verbali consegna DPI"] = true;
+      break;
+    }
+    case "RLS": {
+      const rls = resolveWorkerCourseFieldValue(extracted, "rls");
+      const w = workerFromExtracted(extracted, rls ? { rls } : { rls: true });
+      if (w) updates.maestranze.push(w);
+      mappingWarnings.push(
+        "Documento RLS riconosciuto ma campo maestranza RLS non configurato."
+      );
+      break;
+    }
+    case "RSPP":
+    case "ASPP": {
+      mappingWarnings.push(
+        `${type}: documento riconosciuto; campo maestranza non configurato per aggiornamento automatico.`
+      );
       break;
     }
     case "PREPOSTO": {
@@ -1124,6 +1353,26 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
     );
   }
 
+  if (!hasTypeHardEvidence(documentType, aiPayload, meta.fileName || "")) {
+    mappingWarnings.push(
+      "classificazione non sufficientemente certa"
+    );
+    return {
+      updates: {
+        checklist: {},
+        allegati: {},
+        allegatiScadenze: {},
+        maestranze: [],
+        checkRefs: {},
+      },
+      mappingWarnings,
+      isNomina: false,
+      documentType,
+      analysisUi: null,
+      blockedReason: "classificazione non sufficientemente certa",
+    };
+  }
+
   const { updates, mappingWarnings: mapWarnings } = mapExtractedToUpdates(
     documentType,
     aiPayload.extracted_data || {},
@@ -1143,6 +1392,7 @@ export function buildFastFinalUpdates(aiPayload, meta = {}) {
     isNomina: false,
     documentType,
     analysisUi: null,
+    blockedReason: null,
   };
 }
 
@@ -1168,65 +1418,11 @@ export function buildFinalUpdates(aiPayload) {
 }
 
 export function detectDocumentType(fileName = "") {
-  const n = safeLower(fileName).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (n.includes("durc")) return "DURC";
-  if (n.includes("visura") || n.includes("cciaa") || n.includes("camera")) return "VISURA";
-  if (n.includes("pos") || n.includes("piano operativo")) return "POS";
-  if (n.includes("unilav")) return "UNILAV";
-  if (n.includes("idoneit")) return "IDONEITA";
-  if (
-    (n.includes("nomina") || n.includes("designazione") || n.includes("incarico")) &&
-    !/attestato|corso di|programma didattico|\bore\b/.test(n)
-  ) {
-    if (/primo soccorso|pronto soccorso/.test(n)) return "NOMINA_PRIMO_SOCCORSO";
-    if (/antincendio|prevenzione incendi/.test(n)) return "NOMINA_ANTINCENDIO";
-    if (/preposto/.test(n)) return "NOMINA_PREPOSTO";
-    if (/\brls\b/.test(n)) return "NOMINA_RLS";
-    if (/\brspp\b/.test(n)) return "NOMINA_RSPP";
-    if (/\baspp\b/.test(n)) return "NOMINA_ASPP";
-    return "NOMINA_GENERICA_SICUREZZA";
+  const detected = resolveDocumentTypeWithPriority({}, fileName);
+  if (!detected || detected === "ALTRO" || detected === "UNKNOWN") {
+    return "DOCUMENTO_SCONOSCIUTO";
   }
-  if (
-    n.includes("preposto") ||
-    n.includes("organizzazione di cantiere per preposti")
-  ) {
-    return "PREPOSTO";
-  }
-  if (
-    n.includes("antincendio") ||
-    n.includes("prevenzione incendi") ||
-    n.includes("lotta antincendio")
-  ) {
-    return "ANTINCENDIO";
-  }
-  if (
-    n.includes("gru") ||
-    n.includes("gruista") ||
-    n.includes("conduzione di gru") ||
-    n.includes("gru a torre")
-  ) {
-    return "GRU";
-  }
-  if (
-    n.includes("16 ore") ||
-    n.includes("12 ore") ||
-    n.includes("8 ore") ||
-    (n.includes("rischio") && n.includes("lavorator")) ||
-    n.includes("generale e specifica") ||
-    n.includes("base e specifica")
-  ) {
-    return "FORMAZIONE_BASE_SPECIFICA";
-  }
-  if (n.includes("formazione") && (n.includes("specif") || n.includes("rischio"))) {
-    return "FORMAZIONE_SPECIFICA";
-  }
-  if (n.includes("formazione") || n.includes("81-08") || n.includes("8108")) return "FORMAZIONE_BASE";
-  if (n.includes("soccorso") || n.includes("primo soccorso") || /\bps\b/.test(n)) return "PRIMO_SOCCORSO";
-  if (n.includes("pontegg")) return "PONTEGGI";
-  if (n.includes("mmt") || n.includes("mdt")) return "MMT";
-  if (n.includes("ple")) return "PLE";
-  if (n.includes("confinat") || n.includes("spazi")) return "SPAZI_CONFINATI";
-  return "UNKNOWN";
+  return detected;
 }
 
 function addDays(days) {
@@ -1396,6 +1592,18 @@ function applyMaestranzaField({
 }) {
   if (field === "nome" || field === "codiceFiscale") return;
 
+  if (field === "rls") {
+    const hasFieldConfigured = Object.prototype.hasOwnProperty.call(existing, "rls");
+    if (!hasFieldConfigured) {
+      workerSkipped[field] = {
+        existing: existing[field],
+        proposed: value,
+        reason: "campo maestranza RLS non configurato",
+      };
+      return;
+    }
+  }
+
   if (MAESTRANZA_BOOLEAN_FIELDS.has(field)) {
     if (!shouldUpdateBooleanMaestranzaField(existing[field], value)) {
       if (!isFieldEmpty(value)) {
@@ -1486,6 +1694,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
 
   const applied_changes = {};
   const skipped_changes = {};
+  const warnings = [];
 
   for (const [key, value] of Object.entries(updates.checklist || {})) {
     if (value == null || value === "") continue;
@@ -1556,7 +1765,18 @@ export function applyAiUpdates(current = {}, updates = {}) {
       delete incomingWorker.qualifica;
     }
 
-    const idx = findMaestranzaIndex(maestranze, incomingWorker);
+    const match = findMaestranzaIndex(maestranze, incomingWorker);
+    const idx = match.index;
+    if (match.ambiguous) {
+      warnings.push(`maestranza ambigua: ${incomingWorker.nome}`);
+      if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
+      skipped_changes.maestranze.push({
+        nome: incomingWorker.nome,
+        fields: {},
+        reason: "maestranza ambigua",
+      });
+      continue;
+    }
     if (idx >= 0) {
       const existing = { ...maestranze[idx] };
       const merged = { ...existing };
@@ -1619,6 +1839,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
     maestranze,
     applied_changes,
     skipped_changes,
+    warnings,
   };
 }
 

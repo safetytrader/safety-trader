@@ -14,9 +14,34 @@ export function calcStatus(checks) {
 /** Nominativo maestranza: trim, spazi singoli, MAIUSCOLO (mantiene accenti). */
 export function normalizeWorkerName(value) {
   return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
     .toLocaleUpperCase("it-IT");
+}
+
+/** Normalizza codice fiscale italiano e corregge OCR O/0 nelle posizioni numeriche. */
+export function normalizeCodiceFiscale(value) {
+  const raw = String(value ?? "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9]/g, "");
+  if (!raw) return "";
+
+  const chars = raw.split("");
+  const numericPositions = new Set([6, 7, 9, 10, 12, 13, 14]); // 0-based
+  for (let i = 0; i < chars.length; i += 1) {
+    if (!numericPositions.has(i)) continue;
+    if (chars[i] === "O") chars[i] = "0";
+  }
+
+  const normalized = chars.join("").slice(0, 16);
+  return /^[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]$/.test(normalized)
+    ? normalized
+    : normalized;
 }
 
 /** Qualifica derivata da attestato formazione — non va in campo qualifica. */
@@ -54,14 +79,54 @@ export function normalizeName(name) {
 export function nameSimilarity(name1, name2) {
   const n1 = normalizeName(name1);
   const n2 = normalizeName(name2);
+  if (!n1 || !n2) return 0;
   if (n1 === n2) return 1;
-  
-  const set1 = new Set(n1.split(" "));
-  const set2 = new Set(n2.split(" "));
-  const intersection = [...set1].filter(x => set2.has(x)).length;
-  const union = new Set([...set1, ...set2]).size;
-  
-  return union === 0 ? 0 : intersection / union;
+
+  const t1 = n1.split(" ").filter(Boolean);
+  const t2 = n2.split(" ").filter(Boolean);
+  if (!t1.length || !t2.length) return 0;
+
+  const commonExact = t1.filter(x => t2.includes(x)).length;
+  const baseJaccard = commonExact / new Set([...t1, ...t2]).size;
+
+  const tokenCharScore = t1.reduce((acc, a) => {
+    const best = t2.reduce((b, c) => Math.max(b, charSimilarity(a, c)), 0);
+    return acc + best;
+  }, 0) / t1.length;
+
+  return Math.max(baseJaccard, tokenCharScore);
+}
+
+function charSimilarity(a, b) {
+  const s1 = String(a || "");
+  const s2 = String(b || "");
+  if (!s1 || !s2) return 0;
+  if (s1 === s2) return 1;
+
+  const dist = levenshteinDistance(s1, s2);
+  return 1 - dist / Math.max(s1.length, s2.length, 1);
+}
+
+function levenshteinDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+  for (let i = 0; i < rows; i += 1) dp[i][0] = i;
+  for (let j = 0; j < cols; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return dp[rows - 1][cols - 1];
 }
 
 // Merge dettagliato di due maestranze con deduplicazione intelligente
