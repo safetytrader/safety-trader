@@ -696,11 +696,16 @@ export function resolveVisuraScadenza(extracted = {}) {
 }
 
 export function parseIdoneitaPeriodYears(extracted = {}) {
+  const anniNum = Number(extracted.periodicita_nuova_visita_anni);
+  if (anniNum === 1 || anniNum === 2 || anniNum === 3 || anniNum === 5) return anniNum;
+  if (Number.isFinite(anniNum) && anniNum > 0 && anniNum <= 10) return Math.round(anniNum);
+
   const candidates = [
     extracted.periodicita_nuova_visita,
     extracted.periodicita,
     extracted.periodicita_anni,
     extracted.nuova_visita,
+    extracted.periodicita_evidence,
     extracted.data_visita,
     extracted.data_giudizio,
     extracted.note,
@@ -717,10 +722,15 @@ export function parseIdoneitaPeriodYears(extracted = {}) {
 
   for (const text of candidates) {
     if (/periodicit.*annual/.test(text)) return 1;
-    if (/tra\s+anni/.test(text)) return 1;
-    if (/tra\s+un\s+anno|un\s+anno|\b1\s*anno/.test(text)) return 1;
+    if (/tra\s+1\s*ann|tra\s+un\s+anno|tra\s+1\s*anni|\b1\s*anno\b/.test(text)) return 1;
     if (/\b2\s*ann|tra\s+2\s*ann/.test(text)) return 2;
     if (/\b3\s*ann|tra\s+3\s*ann/.test(text)) return 3;
+    if (/\b5\s*ann|tra\s+5\s*ann/.test(text)) return 5;
+    const traM = text.match(/tra\s+(\d+)\s*ann/i);
+    if (traM) {
+      const years = Number(traM[1]);
+      if (Number.isFinite(years) && years > 0 && years <= 10) return years;
+    }
     const m = text.match(/(\d+)\s*ann/);
     if (m) {
       const years = Number(m[1]);
@@ -759,7 +769,7 @@ export function calculateHealthExpiry(extracted = {}, mappingWarnings = []) {
   } else if (dataVisitaParsed && periodicitaYears) {
     calculatedExpiry = addYearsIsoDate(dataVisitaParsed, periodicitaYears);
   } else if (dataVisitaParsed && !periodicitaYears) {
-    reasonIfNotApplied = "Data visita rilevata ma scadenza idoneità non determinabile.";
+    reasonIfNotApplied = "Periodicità visita non rilevabile dal documento.";
     mappingWarnings.push(reasonIfNotApplied);
   }
 
@@ -1090,7 +1100,11 @@ export function inferIdoneitaPeriodicityHint(text = "") {
     .replace(/[\u0300-\u036f]/g, " ");
 
   if (!t.trim()) return null;
-  if (/periodicit.*annual|tra\s+un\s+anno|tra\s+1\s*ann|nuova visita.*1\s*ann|rivedibile.*1\s*ann/.test(t)) {
+  if (
+    /periodicit.*annual|tra\s+un\s+anno|tra\s+1\s*ann|tra\s+1\s*anni|nuova visita.*1\s*ann|rivedibile.*1\s*ann/.test(
+      t
+    )
+  ) {
     return "1 anno";
   }
   if (/tra\s+2\s*ann|periodicit.*biennal/.test(t)) return "2 anni";
@@ -1934,11 +1948,7 @@ export function applyAiUpdates(current = {}, updates = {}, options = {}) {
     let ambiguous = false;
 
     if (isIdoneitaDoc) {
-      const healthMatch = findExistingWorkerForHealthCertificate(
-        incomingWorker,
-        maestranze,
-        fileName
-      );
+      const healthMatch = findExistingWorkerForHealthCertificate(incomingWorker, maestranze);
       debug_worker_match = healthMatch.debug;
       idoneitaMatchScore = healthMatch.bestScore || 0;
       ambiguous = healthMatch.ambiguous;
@@ -1990,13 +2000,8 @@ export function applyAiUpdates(current = {}, updates = {}, options = {}) {
       if (nomeNorm && merged.nome !== nomeNorm) {
         merged.nome = nomeNorm;
       }
-      if (
-        isIdoneitaDoc &&
-        incomingWorker.nome &&
-        normalizeWorkerName(incomingWorker.nome) !== normalizeWorkerName(existing.nome) &&
-        idoneitaMatchScore >= 0.68
-      ) {
-        merged.nome = normalizeWorkerName(incomingWorker.nome);
+      if (isIdoneitaDoc && idx >= 0 && existing.nome) {
+        incomingWorker.nome = normalizeWorkerName(existing.nome);
       }
       if (incomingWorker.codiceFiscale && !merged.codiceFiscale) {
         merged.codiceFiscale = incomingWorker.codiceFiscale;

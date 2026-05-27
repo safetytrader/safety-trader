@@ -24,7 +24,7 @@ function surnameOcrScore(s1, s2) {
   return charSimilarity(a, b);
 }
 
-function scoreHealthName(extractedName, existingName, fileName = "") {
+function scoreHealthName(extractedName, existingName) {
   const a = normalizeWorkerName(extractedName);
   const b = normalizeWorkerName(existingName);
   if (!a || !b) return { score: 0, reason: "nome vuoto" };
@@ -48,17 +48,6 @@ function scoreHealthName(extractedName, existingName, fileName = "") {
     });
   }
 
-  const fileNorm = String(fileName || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  if (fileNorm && aParts.some(p => p.length >= 3 && fileNorm.includes(p.toLowerCase()))) {
-    scores.push({
-      score: Math.min(1, Math.max(...scores.map(s => s.score)) + 0.04),
-      reason: "indizio filename",
-    });
-  }
-
   return scores.reduce((best, cur) => (cur.score > best.score ? cur : best), scores[0]);
 }
 
@@ -67,15 +56,14 @@ function scoreHealthName(extractedName, existingName, fileName = "") {
  */
 export function findExistingWorkerForHealthCertificate(
   extractedWorker = {},
-  existingWorkers = [],
-  fileName = ""
+  existingWorkers = []
 ) {
   const extractedName = normalizeWorkerName(extractedWorker.nome || "");
   const cf = normalizeCodiceFiscale(extractedWorker.codiceFiscale || "");
 
   const candidates = (existingWorkers || []).map((worker, index) => {
     const existingName = normalizeWorkerName(worker.nome || "");
-    const { score, reason } = scoreHealthName(extractedName, existingName, fileName);
+    const { score, reason } = scoreHealthName(extractedName, existingName);
     return {
       index,
       existingName: worker.nome || existingName,

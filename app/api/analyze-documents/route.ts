@@ -6,8 +6,13 @@ import {
   calculateHealthExpiry,
   inferIdoneitaPeriodicityHint,
   parseAiJsonResponse,
+  parseIdoneitaPeriodYears,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
+import {
+  enrichIdoneitaExtractedForMapping,
+  IDONEITA_PERIODICITY_WARNING,
+} from "@/lib/idoneitaVision";
 import {
   applyPosPageReferences,
   extractDeterministicPosReferences,
@@ -329,6 +334,30 @@ export async function POST(request: Request) {
         aiPayload.extracted_data.periodicita_nuova_visita = inferredPeriodicita;
       }
     }
+
+    let idoneitaEnrichMeta: Record<string, unknown> | null = null;
+    if (String(aiPayload.document_type || "").toUpperCase() === "IDONEITA") {
+      if (!aiPayload.extracted_data || typeof aiPayload.extracted_data !== "object") {
+        aiPayload.extracted_data = {} as (typeof aiPayload)["extracted_data"];
+      }
+      const visionBuffer = buffer || refsBuffer;
+      idoneitaEnrichMeta = await enrichIdoneitaExtractedForMapping({
+        extracted: aiPayload.extracted_data,
+        textBlobs: [
+          idoneitaContextText,
+          ...(clientPageTexts || []).map(p => p.text || ""),
+        ],
+        visionBuffer,
+        mimeType,
+      });
+      if (idoneitaEnrichMeta?.periodicityWarning) {
+        if (!Array.isArray(aiPayload.warnings)) aiPayload.warnings = [];
+        if (!aiPayload.warnings.includes(IDONEITA_PERIODICITY_WARNING)) {
+          aiPayload.warnings.push(IDONEITA_PERIODICITY_WARNING);
+        }
+      }
+    }
+
     const built = buildFastFinalUpdates(aiPayload, { fileName });
     const documentType =
       built.documentType ||
@@ -393,14 +422,22 @@ export async function POST(request: Request) {
           .map((w: any) => w?.fields?.idoneita?.reason || w?.reason || null)
           .find(Boolean) || idDetails.reasonIfNotApplied || null;
 
+      const enrich = idoneitaEnrichMeta || {};
       debugIdoneita = {
         documentType,
         extractedWorker: aiPayload.extracted_data?.lavoratore || "",
         matchedWorker: debugWorkerMatch?.selectedWorker || null,
         dataVisitaRaw: idDetails.dataVisitaRaw,
         dataVisitaParsed: idDetails.dataVisitaParsed,
+        periodicitaRawFromText: enrich.periodicitaRawFromText ?? idDetails.periodicitaRaw,
+        periodicitaYearsFromText:
+          enrich.periodicitaYearsFromText ?? parseIdoneitaPeriodYears(aiPayload.extracted_data || {}),
         periodicitaRaw: idDetails.periodicitaRaw,
         periodicitaYears: idDetails.periodicitaYears,
+        visionFallbackUsed: Boolean(enrich.visionFallbackUsed),
+        visionPeriodicitaYears: enrich.visionPeriodicitaYears ?? null,
+        visionEvidence: enrich.visionEvidence ?? null,
+        visionError: enrich.visionError ?? null,
         dataScadenzaRaw: idDetails.dataScadenzaRaw,
         calculatedExpiry: idDetails.calculatedExpiry,
         fieldUsedForIdoneita: "idoneita",

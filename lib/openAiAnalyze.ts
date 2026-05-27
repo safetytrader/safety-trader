@@ -121,6 +121,19 @@ Schema:
 
 const MAX_OUTPUT_TOKENS = 600;
 const MAX_OUTPUT_TOKENS_POS_REFS_GROUP = 1800;
+const MAX_OUTPUT_TOKENS_IDONEITA_VISION = 500;
+
+const IDONEITA_VISION_PROMPT = `Analizza questo certificato di idoneità alla mansione. Devi individuare la data della visita e la periodicità della nuova visita medica. Cerca nella sezione in basso dove compaiono opzioni tipo "tra 1 anni", "tra 3 anni", "tra 5 anni", "altro". Determina quale casella è barrata/selezionata. Non usare il nome file. Non inventare. Se la casella "tra 1 anni" è selezionata, restituisci periodicita_nuova_visita_anni = 1. Calcola data_scadenza_calcolata sommando la periodicità alla data visita.
+
+Restituisci SOLO JSON valido:
+{
+  "data_visita": "YYYY-MM-DD oppure null",
+  "giudizio": "IDONEO / IDONEO CON PRESCRIZIONI / IDONEO CON LIMITAZIONI / INIDONEO / null",
+  "periodicita_nuova_visita_anni": 1 | 2 | 3 | 5 | null,
+  "periodicita_evidence": "testo o descrizione visiva della casella selezionata",
+  "data_scadenza_calcolata": "YYYY-MM-DD oppure null",
+  "confidence": 0-1
+}`;
 
 function buildHintsLine(hints = []) {
   if (!hints?.length) return "";
@@ -256,6 +269,44 @@ ${AI_SYSTEM_PROMPT}`;
       text: userText,
     },
   ]);
+}
+
+/** Vision mirata certificato idoneità: periodicità nuova visita (checkbox). */
+export async function analyzeIdoneitaCertificateVisionWithOpenAI({
+  base64,
+  mimeType,
+}: {
+  base64: string;
+  mimeType: string;
+}) {
+  const safeMime = String(mimeType || "application/pdf").toLowerCase();
+  const isImage = safeMime.startsWith("image/");
+  const fileData = `data:${safeMime};base64,${base64}`;
+
+  const content = isImage
+    ? [
+        {
+          type: "input_image",
+          image_url: fileData,
+        },
+        {
+          type: "input_text",
+          text: IDONEITA_VISION_PROMPT,
+        },
+      ]
+    : [
+        {
+          type: "input_file",
+          filename: "certificato-idoneita.pdf",
+          file_data: fileData,
+        },
+        {
+          type: "input_text",
+          text: IDONEITA_VISION_PROMPT,
+        },
+      ];
+
+  return callOpenAIResponses(content, MAX_OUTPUT_TOKENS_IDONEITA_VISION);
 }
 
 /** Modalità FILE_FALLBACK: file completo (PDF/immagine). */
