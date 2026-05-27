@@ -374,6 +374,7 @@ export async function POST(request: Request) {
           .find(Boolean) || idDetails.reasonIfNotApplied || null;
 
       debugIdoneita = {
+        documentType,
         extractedWorker: aiPayload.extracted_data?.lavoratore || "",
         matchedWorker: debugWorkerMatch?.selectedWorker || null,
         dataVisitaRaw: idDetails.dataVisitaRaw,
@@ -382,6 +383,12 @@ export async function POST(request: Request) {
         periodicitaYears: idDetails.periodicitaYears,
         dataScadenzaRaw: idDetails.dataScadenzaRaw,
         calculatedExpiry: idDetails.calculatedExpiry,
+        fieldUsedForIdoneita: "idoneita",
+        updatePayload: (built.updates?.maestranze || []).map((w: any) => ({
+          nome: w?.nome,
+          idoneita: w?.idoneita,
+          qualifica: w?.qualifica,
+        })),
         appliedToField: idApplied,
         reasonIfNotApplied: idApplied ? null : skippedIdReason,
       };

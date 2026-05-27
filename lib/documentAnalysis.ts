@@ -599,7 +599,7 @@ export function parseItalianDate(value) {
     .trim();
   if (!t) return null;
 
-  const m = t.match(/^(\d{1,2})\s+([A-Z]+)\s+(\d{2,4})$/);
+  const m = t.match(/(?:^|\s)(\d{1,2})\s+([A-Z]+)\s+(\d{2,4})(?:\s|$)/);
   if (!m) return null;
 
   const day = Number(m[1]);
@@ -701,8 +701,11 @@ export function parseIdoneitaPeriodYears(extracted = {}) {
     extracted.periodicita,
     extracted.periodicita_anni,
     extracted.nuova_visita,
+    extracted.data_visita,
+    extracted.data_giudizio,
     extracted.note,
     extracted.summary,
+    ...Object.values(extracted || {}).filter(v => typeof v === "string"),
   ]
     .filter(Boolean)
     .map(v =>
@@ -737,7 +740,11 @@ export function calculateHealthExpiry(extracted = {}, mappingWarnings = []) {
     extracted.nuova_visita ||
     null;
 
-  const dataVisitaParsed = normalizeDate(dataVisitaRaw);
+  const dataVisitaParsed =
+    normalizeDate(extracted.data_visita) ||
+    normalizeDate(extracted.data_giudizio) ||
+    normalizeDate(extracted.data_emissione) ||
+    normalizeDate(dataVisitaRaw);
   const dataScadenzaParsed = normalizeDate(dataScadenzaRaw);
   const periodicitaYears = parseIdoneitaPeriodYears(extracted);
 
@@ -1302,8 +1309,7 @@ export function mapExtractedToUpdates(documentType, extracted = {}, meta = {}) {
     }
     case "IDONEITA": {
       const idoneitaIso = resolveIdoneitaScadenza(extracted, mappingWarnings);
-      const idoneita = idoneitaIso ? toAppDateFromIso(idoneitaIso) : null;
-      const w = workerFromExtracted(extracted, idoneita ? { idoneita } : {}, {
+      const w = workerFromExtracted(extracted, idoneitaIso ? { idoneita: idoneitaIso } : {}, {
         withQualifica: true,
       });
       if (w) updates.maestranze.push(w);
