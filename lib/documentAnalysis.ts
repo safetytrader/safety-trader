@@ -1083,6 +1083,22 @@ export function resolveDocumentTypeWithPriority(payload = {}, fileName = "") {
   return aiType;
 }
 
+export function inferIdoneitaPeriodicityHint(text = "") {
+  const t = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, " ");
+
+  if (!t.trim()) return null;
+  if (/periodicit.*annual|tra\s+un\s+anno|tra\s+1\s*ann|nuova visita.*1\s*ann|rivedibile.*1\s*ann/.test(t)) {
+    return "1 anno";
+  }
+  if (/tra\s+2\s*ann|periodicit.*biennal/.test(t)) return "2 anni";
+  if (/tra\s+3\s*ann|periodicit.*triennal/.test(t)) return "3 anni";
+  if (/tra\s+5\s*ann|periodicit.*quinquennal/.test(t)) return "5 anni";
+  return null;
+}
+
 function hasTypeHardEvidence(documentType, payload = {}, fileName = "") {
   const text = safeLower(
     classificationBlob(payload, fileName)
@@ -1745,6 +1761,15 @@ function applyMaestranzaField({
       return;
     }
     if (!isFieldEmpty(existing.qualifica)) {
+      if (shouldCorrectQualificaOcr(existing.qualifica, value)) {
+        merged.qualifica = value;
+        workerApplied.qualifica = {
+          previous: existing.qualifica,
+          value,
+          reason: "correzione OCR qualifica",
+        };
+        return;
+      }
       workerSkipped[field] = {
         existing: existing.qualifica,
         proposed: value,
@@ -1793,6 +1818,26 @@ function applyMaestranzaField({
   };
 }
 
+function normalizeQualificaForCompare(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shouldCorrectQualificaOcr(existingValue, proposedValue) {
+  const ex = normalizeQualificaForCompare(existingValue);
+  const pr = normalizeQualificaForCompare(proposedValue);
+  if (!ex || !pr || ex === pr) return false;
+  if (pr.length < ex.length) return false;
+  if (!/operaio|edile|manovale/.test(pr)) return false;
+  const score = nameSimilarity(ex, pr);
+  return score >= 0.8;
+}
+
 /**
  * Applica aggiornamenti AI: per le scadenze mantiene sempre il dato più recente.
  */
@@ -1810,6 +1855,7 @@ export function applyAiUpdates(current = {}, updates = {}, options = {}) {
   const skipped_changes = {};
   const warnings = [];
   let debug_worker_match = null;
+  let idoneitaMatchScore = 0;
 
   for (const [key, value] of Object.entries(updates.checklist || {})) {
     if (value == null || value === "") continue;
@@ -1894,6 +1940,7 @@ export function applyAiUpdates(current = {}, updates = {}, options = {}) {
         fileName
       );
       debug_worker_match = healthMatch.debug;
+      idoneitaMatchScore = healthMatch.bestScore || 0;
       ambiguous = healthMatch.ambiguous;
       idx = healthMatch.index;
 
@@ -1942,6 +1989,14 @@ export function applyAiUpdates(current = {}, updates = {}, options = {}) {
       const nomeNorm = normalizeWorkerName(merged.nome);
       if (nomeNorm && merged.nome !== nomeNorm) {
         merged.nome = nomeNorm;
+      }
+      if (
+        isIdoneitaDoc &&
+        incomingWorker.nome &&
+        normalizeWorkerName(incomingWorker.nome) !== normalizeWorkerName(existing.nome) &&
+        idoneitaMatchScore >= 0.68
+      ) {
+        merged.nome = normalizeWorkerName(incomingWorker.nome);
       }
       if (incomingWorker.codiceFiscale && !merged.codiceFiscale) {
         merged.codiceFiscale = incomingWorker.codiceFiscale;

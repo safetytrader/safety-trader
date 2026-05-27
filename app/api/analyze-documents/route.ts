@@ -4,6 +4,7 @@ import {
   buildFastFinalUpdates,
   buildNominaSkippedChanges,
   calculateHealthExpiry,
+  inferIdoneitaPeriodicityHint,
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
@@ -309,6 +310,25 @@ export async function POST(request: Request) {
     console.log("[AI] analysisMode", analysisMode);
 
     const aiPayload = parseAiJsonResponse(rawAiResponse);
+    const idoneitaContextText = [
+      clientExtractedText,
+      ...(clientPageTexts || []).map(p => p.text || ""),
+      aiPayload.summary || "",
+      aiPayload.extracted_data?.periodicita_nuova_visita || "",
+      (aiPayload.extracted_data as any)?.note || "",
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 80000);
+    if (
+      String(aiPayload.document_type || "").toUpperCase() === "IDONEITA" &&
+      !aiPayload.extracted_data?.periodicita_nuova_visita
+    ) {
+      const inferredPeriodicita = inferIdoneitaPeriodicityHint(idoneitaContextText);
+      if (inferredPeriodicita) {
+        aiPayload.extracted_data.periodicita_nuova_visita = inferredPeriodicita;
+      }
+    }
     const built = buildFastFinalUpdates(aiPayload, { fileName });
     const documentType =
       built.documentType ||
