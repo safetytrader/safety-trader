@@ -7,6 +7,7 @@ import {
   normalizeCodiceFiscale,
   normalizeWorkerName,
 } from "@/lib/utils";
+import { findExistingWorkerForHealthCertificate } from "@/lib/workerHealthMatch";
 
 /** Chiavi allegati nel DB app (testo completo) */
 export const ALLEGATI_KEY_MAP = {
@@ -464,8 +465,13 @@ function normalizeExtractedData(raw = {}) {
     data_emissione: raw.data_emissione ?? null,
     data_documento: raw.data_documento ?? null,
     data_giudizio: raw.data_giudizio ?? null,
+    data_visita: raw.data_visita ?? null,
     data_erogazione: raw.data_erogazione ?? null,
     data_scadenza: raw.data_scadenza ?? null,
+    periodicita_nuova_visita:
+      raw.periodicita_nuova_visita ?? raw.periodicita ?? raw.nuova_visita ?? null,
+    giudizio_idoneita: raw.giudizio_idoneita ?? raw.giudizio ?? null,
+    ditta: raw.ditta ?? null,
     data_fine_contratto: raw.data_fine_contratto ?? null,
     data_inizio_rapporto: raw.data_inizio_rapporto ?? null,
     data_proroga: raw.data_proroga ?? null,
@@ -637,6 +643,7 @@ export function resolveVisuraScadenza(extracted = {}) {
 
 function parseIdoneitaPeriodYears(extracted = {}) {
   const candidates = [
+    extracted.periodicita_nuova_visita,
     extracted.periodicita,
     extracted.periodicita_anni,
     extracted.nuova_visita,
@@ -644,9 +651,17 @@ function parseIdoneitaPeriodYears(extracted = {}) {
     extracted.summary,
   ]
     .filter(Boolean)
-    .map(v => String(v).toLowerCase());
+    .map(v =>
+      String(v)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+    );
 
   for (const text of candidates) {
+    if (/tra\s+un\s+anno|un\s+anno|\b1\s*anno/.test(text)) return 1;
+    if (/\b2\s*ann|tra\s+2\s*ann/.test(text)) return 2;
+    if (/\b3\s*ann|tra\s+3\s*ann/.test(text)) return 3;
     const m = text.match(/(\d+)\s*ann/);
     if (m) {
       const years = Number(m[1]);
@@ -657,22 +672,36 @@ function parseIdoneitaPeriodYears(extracted = {}) {
 }
 
 export function resolveIdoneitaScadenza(extracted = {}, mappingWarnings = []) {
-  const explicit = normalizeDate(extracted.data_scadenza);
-  if (explicit) return explicit;
-
-  const visita = normalizeDate(
-    extracted.data_visita || extracted.data_giudizio || extracted.data_emissione
-  );
+  const visita = normalizeDate(extracted.data_visita);
+  const explicitRaw = normalizeDate(extracted.data_scadenza);
   const years = parseIdoneitaPeriodYears(extracted);
+
+  const explicitIsVisitMislabel =
+    explicitRaw && visita && explicitRaw === visita;
+
+  if (explicitRaw && !explicitIsVisitMislabel) {
+    return explicitRaw;
+  }
+
   if (visita && years) {
     return addYearsIsoDate(visita, years);
   }
+
   if (visita && !years) {
     mappingWarnings.push(
-      "Idoneità: data visita rilevata ma periodicità mancante, scadenza non calcolata automaticamente."
+      "Data visita rilevata ma scadenza idoneità non determinabile."
     );
   }
+
   return null;
+}
+
+function pickIdoneitaIncomingFields(worker = {}) {
+  const out = { nome: worker.nome };
+  if (worker.codiceFiscale) out.codiceFiscale = worker.codiceFiscale;
+  if (worker.idoneita) out.idoneita = worker.idoneita;
+  if (worker.qualifica) out.qualifica = worker.qualifica;
+  return out;
 }
 
 function formationYearsForKey(courseKey) {
@@ -1685,7 +1714,10 @@ function applyMaestranzaField({
 /**
  * Applica aggiornamenti AI: per le scadenze mantiene sempre il dato più recente.
  */
-export function applyAiUpdates(current = {}, updates = {}) {
+export function applyAiUpdates(current = {}, updates = {}, options = {}) {
+  const { fileName = "", documentType = "" } = options;
+  const isIdoneitaDoc = String(documentType || "").toUpperCase() === "IDONEITA";
+
   const checks = { ...(current.checks || {}) };
   const checkRefs = { ...(current.checkRefs || {}) };
   const allegati = { ...(current.allegati || {}) };
@@ -1695,6 +1727,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
   const applied_changes = {};
   const skipped_changes = {};
   const warnings = [];
+  let debug_worker_match = null;
 
   for (const [key, value] of Object.entries(updates.checklist || {})) {
     if (value == null || value === "") continue;
@@ -1757,7 +1790,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
   for (const incoming of updates.maestranze || []) {
     if (!incoming?.nome?.trim()) continue;
 
-    const incomingWorker = { ...incoming, nome: normalizeWorkerName(incoming.nome) };
+    let incomingWorker = { ...incoming, nome: normalizeWorkerName(incoming.nome) };
     if (
       incomingWorker.qualifica &&
       isFormationLikeQualifica(incomingWorker.qualifica)
@@ -1765,18 +1798,62 @@ export function applyAiUpdates(current = {}, updates = {}) {
       delete incomingWorker.qualifica;
     }
 
-    const match = findMaestranzaIndex(maestranze, incomingWorker);
-    const idx = match.index;
-    if (match.ambiguous) {
-      warnings.push(`maestranza ambigua: ${incomingWorker.nome}`);
-      if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
-      skipped_changes.maestranze.push({
-        nome: incomingWorker.nome,
-        fields: {},
-        reason: "maestranza ambigua",
-      });
-      continue;
+    if (isIdoneitaDoc) {
+      incomingWorker = pickIdoneitaIncomingFields(incomingWorker);
     }
+
+    let idx = -1;
+    let ambiguous = false;
+
+    if (isIdoneitaDoc) {
+      const healthMatch = findExistingWorkerForHealthCertificate(
+        incomingWorker,
+        maestranze,
+        fileName
+      );
+      debug_worker_match = healthMatch.debug;
+      ambiguous = healthMatch.ambiguous;
+      idx = healthMatch.index;
+
+      if (ambiguous) {
+        warnings.push("Maestranza ambigua per idoneità sanitaria.");
+        if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
+        skipped_changes.maestranze.push({
+          nome: incomingWorker.nome,
+          fields: {},
+          reason: "maestranza ambigua per idoneità sanitaria",
+        });
+        continue;
+      }
+
+      if (idx < 0 && !healthMatch.allowCreate) {
+        warnings.push(
+          "Idoneità sanitaria: nome lavoratore non abbastanza attendibile per creare nuova maestranza."
+        );
+        if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
+        skipped_changes.maestranze.push({
+          nome: incomingWorker.nome,
+          fields: incomingWorker,
+          reason: "match non univoco, nuova maestranza non creata",
+        });
+        continue;
+      }
+    } else {
+      const match = findMaestranzaIndex(maestranze, incomingWorker);
+      idx = match.index;
+      ambiguous = match.ambiguous;
+      if (ambiguous) {
+        warnings.push(`maestranza ambigua: ${incomingWorker.nome}`);
+        if (!skipped_changes.maestranze) skipped_changes.maestranze = [];
+        skipped_changes.maestranze.push({
+          nome: incomingWorker.nome,
+          fields: {},
+          reason: "maestranza ambigua",
+        });
+        continue;
+      }
+    }
+
     if (idx >= 0) {
       const existing = { ...maestranze[idx] };
       const merged = { ...existing };
@@ -1840,6 +1917,7 @@ export function applyAiUpdates(current = {}, updates = {}) {
     applied_changes,
     skipped_changes,
     warnings,
+    debug_worker_match,
   };
 }
 

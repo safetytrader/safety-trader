@@ -97,7 +97,7 @@ export function nameSimilarity(name1, name2) {
   return Math.max(baseJaccard, tokenCharScore);
 }
 
-function charSimilarity(a, b) {
+export function charSimilarity(a, b) {
   const s1 = String(a || "");
   const s2 = String(b || "");
   if (!s1 || !s2) return 0;

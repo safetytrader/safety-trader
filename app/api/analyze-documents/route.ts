@@ -323,6 +323,7 @@ export async function POST(request: Request) {
 
     const current = await loadImpresaStateForAi(supabase, impresaId);
     const preservedCheckRefs = current.checkRefs || {};
+    let debugWorkerMatch = null;
 
     let applied = built.isNomina
       ? {
@@ -334,6 +335,7 @@ export async function POST(request: Request) {
           applied_changes: {},
           skipped_changes: buildNominaSkippedChanges(documentType),
           warnings: [],
+          debug_worker_match: null,
         }
       : applyAiUpdates(
           {
@@ -343,8 +345,10 @@ export async function POST(request: Request) {
             allegatiScadenze: current.allegatiScadenze,
             maestranze: current.maestranze,
           },
-          built.updates
+          built.updates,
+          { fileName, documentType }
         );
+    debugWorkerMatch = applied.debug_worker_match || null;
     if (Array.isArray(applied.warnings) && applied.warnings.length) {
       warnings.push(...applied.warnings);
     }
@@ -352,6 +356,7 @@ export async function POST(request: Request) {
     if (!built.isNomina && built.blockedReason) {
       applied = {
         ...applied,
+        debug_worker_match: applied.debug_worker_match ?? null,
         skipped_changes: mergeSkippedChanges(applied.skipped_changes, {
           document: {
             reason: built.blockedReason,
@@ -491,6 +496,10 @@ export async function POST(request: Request) {
       pos_refs_no_text: posRefsNoText,
       pos_refs_extraction_failed: posRefsExtractionFailed,
       debug_pos_refs: debugPosRefs,
+      debug_worker_match:
+        String(documentType || "").toUpperCase() === "IDONEITA"
+          ? debugWorkerMatch
+          : null,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,
