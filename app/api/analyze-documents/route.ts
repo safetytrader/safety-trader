@@ -3,6 +3,7 @@ import {
   applyAiUpdates,
   buildFastFinalUpdates,
   buildNominaSkippedChanges,
+  calculateHealthExpiry,
   parseAiJsonResponse,
   resolveDocumentTypeWithPriority,
 } from "@/lib/documentAnalysis";
@@ -324,6 +325,7 @@ export async function POST(request: Request) {
     const current = await loadImpresaStateForAi(supabase, impresaId);
     const preservedCheckRefs = current.checkRefs || {};
     let debugWorkerMatch = null;
+    let debugIdoneita: Record<string, unknown> | null = null;
 
     let applied = built.isNomina
       ? {
@@ -351,6 +353,38 @@ export async function POST(request: Request) {
     debugWorkerMatch = applied.debug_worker_match || null;
     if (Array.isArray(applied.warnings) && applied.warnings.length) {
       warnings.push(...applied.warnings);
+    }
+
+    if (String(documentType || "").toUpperCase() === "IDONEITA") {
+      const idDetails = calculateHealthExpiry(aiPayload.extracted_data || {}, []);
+      const appliedChangesAny = (applied as any).applied_changes || {};
+      const skippedChangesAny = (applied as any).skipped_changes || {};
+      const appliedWorkers = Array.isArray(appliedChangesAny?.maestranze)
+        ? appliedChangesAny.maestranze
+        : [];
+      const skippedWorkers = Array.isArray(skippedChangesAny?.maestranze)
+        ? skippedChangesAny.maestranze
+        : [];
+      const idApplied = appliedWorkers.some(
+        (entry: any) => entry?.fields && Object.prototype.hasOwnProperty.call(entry.fields, "idoneita")
+      );
+      const skippedIdReason =
+        skippedWorkers
+          .map((w: any) => w?.fields?.idoneita?.reason || w?.reason || null)
+          .find(Boolean) || idDetails.reasonIfNotApplied || null;
+
+      debugIdoneita = {
+        extractedWorker: aiPayload.extracted_data?.lavoratore || "",
+        matchedWorker: debugWorkerMatch?.selectedWorker || null,
+        dataVisitaRaw: idDetails.dataVisitaRaw,
+        dataVisitaParsed: idDetails.dataVisitaParsed,
+        periodicitaRaw: idDetails.periodicitaRaw,
+        periodicitaYears: idDetails.periodicitaYears,
+        dataScadenzaRaw: idDetails.dataScadenzaRaw,
+        calculatedExpiry: idDetails.calculatedExpiry,
+        appliedToField: idApplied,
+        reasonIfNotApplied: idApplied ? null : skippedIdReason,
+      };
     }
 
     if (!built.isNomina && built.blockedReason) {
@@ -499,6 +533,10 @@ export async function POST(request: Request) {
       debug_worker_match:
         String(documentType || "").toUpperCase() === "IDONEITA"
           ? debugWorkerMatch
+          : null,
+      debug_idoneita:
+        String(documentType || "").toUpperCase() === "IDONEITA"
+          ? debugIdoneita
           : null,
       state: {
         checks: applied.checks,

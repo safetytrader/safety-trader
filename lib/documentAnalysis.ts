@@ -556,7 +556,61 @@ export function normalizeDate(value) {
     return `${year}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}`;
   }
 
+  const italian = parseItalianDate(t);
+  if (italian) return italian;
+
   return null;
+}
+
+const IT_MONTHS: Record<string, string> = {
+  GEN: "01",
+  GENNAIO: "01",
+  FEB: "02",
+  FEBBRAIO: "02",
+  MAR: "03",
+  MARZO: "03",
+  APR: "04",
+  APRILE: "04",
+  MAG: "05",
+  MAGGIO: "05",
+  GIU: "06",
+  GIUGNO: "06",
+  LUG: "07",
+  LUGLIO: "07",
+  AGO: "08",
+  AGOSTO: "08",
+  SET: "09",
+  SETTEMBRE: "09",
+  OTT: "10",
+  OTTOBRE: "10",
+  NOV: "11",
+  NOVEMBRE: "11",
+  DIC: "12",
+  DICEMBRE: "12",
+};
+
+export function parseItalianDate(value) {
+  const t = String(value || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return null;
+
+  const m = t.match(/^(\d{1,2})\s+([A-Z]+)\s+(\d{2,4})$/);
+  if (!m) return null;
+
+  const day = Number(m[1]);
+  const month = IT_MONTHS[m[2]];
+  if (!month) return null;
+
+  let year = Number(m[3]);
+  if (m[3].length === 2) year = 2000 + year;
+  if (!Number.isFinite(year) || year < 1900 || year > 2200) return null;
+
+  return `${year}-${month}-${String(day).padStart(2, "0")}`;
 }
 
 export const EXPIRING_DOCUMENT_RULES = {
@@ -641,7 +695,7 @@ export function resolveVisuraScadenza(extracted = {}) {
   return null;
 }
 
-function parseIdoneitaPeriodYears(extracted = {}) {
+export function parseIdoneitaPeriodYears(extracted = {}) {
   const candidates = [
     extracted.periodicita_nuova_visita,
     extracted.periodicita,
@@ -659,6 +713,8 @@ function parseIdoneitaPeriodYears(extracted = {}) {
     );
 
   for (const text of candidates) {
+    if (/periodicit.*annual/.test(text)) return 1;
+    if (/tra\s+anni/.test(text)) return 1;
     if (/tra\s+un\s+anno|un\s+anno|\b1\s*anno/.test(text)) return 1;
     if (/\b2\s*ann|tra\s+2\s*ann/.test(text)) return 2;
     if (/\b3\s*ann|tra\s+3\s*ann/.test(text)) return 3;
@@ -671,29 +727,49 @@ function parseIdoneitaPeriodYears(extracted = {}) {
   return null;
 }
 
-export function resolveIdoneitaScadenza(extracted = {}, mappingWarnings = []) {
-  const visita = normalizeDate(extracted.data_visita);
-  const explicitRaw = normalizeDate(extracted.data_scadenza);
-  const years = parseIdoneitaPeriodYears(extracted);
+export function calculateHealthExpiry(extracted = {}, mappingWarnings = []) {
+  const dataVisitaRaw =
+    extracted.data_visita || extracted.data_giudizio || extracted.data_emissione || null;
+  const dataScadenzaRaw = extracted.data_scadenza || null;
+  const periodicitaRaw =
+    extracted.periodicita_nuova_visita ||
+    extracted.periodicita ||
+    extracted.nuova_visita ||
+    null;
+
+  const dataVisitaParsed = normalizeDate(dataVisitaRaw);
+  const dataScadenzaParsed = normalizeDate(dataScadenzaRaw);
+  const periodicitaYears = parseIdoneitaPeriodYears(extracted);
+
+  let calculatedExpiry = null;
+  let reasonIfNotApplied = null;
 
   const explicitIsVisitMislabel =
-    explicitRaw && visita && explicitRaw === visita;
+    dataScadenzaParsed && dataVisitaParsed && dataScadenzaParsed === dataVisitaParsed;
 
-  if (explicitRaw && !explicitIsVisitMislabel) {
-    return explicitRaw;
+  if (dataScadenzaParsed && !explicitIsVisitMislabel) {
+    calculatedExpiry = dataScadenzaParsed;
+  } else if (dataVisitaParsed && periodicitaYears) {
+    calculatedExpiry = addYearsIsoDate(dataVisitaParsed, periodicitaYears);
+  } else if (dataVisitaParsed && !periodicitaYears) {
+    reasonIfNotApplied = "Data visita rilevata ma scadenza idoneità non determinabile.";
+    mappingWarnings.push(reasonIfNotApplied);
   }
 
-  if (visita && years) {
-    return addYearsIsoDate(visita, years);
-  }
+  return {
+    dataVisitaRaw,
+    dataVisitaParsed,
+    periodicitaRaw,
+    periodicitaYears,
+    dataScadenzaRaw,
+    calculatedExpiry,
+    reasonIfNotApplied,
+  };
+}
 
-  if (visita && !years) {
-    mappingWarnings.push(
-      "Data visita rilevata ma scadenza idoneità non determinabile."
-    );
-  }
-
-  return null;
+export function resolveIdoneitaScadenza(extracted = {}, mappingWarnings = []) {
+  const result = calculateHealthExpiry(extracted, mappingWarnings);
+  return result.calculatedExpiry;
 }
 
 function pickIdoneitaIncomingFields(worker = {}) {
