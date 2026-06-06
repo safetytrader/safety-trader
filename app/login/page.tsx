@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { signIn } from "@/lib/auth";
+import { useEffect, useState } from "react";
+import { signIn, AuthAccessError } from "@/lib/auth";
 
 type MessageType = "success" | "error" | null;
 
@@ -20,6 +20,14 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>(null);
 
+  useEffect(() => {
+    const notice = sessionStorage.getItem("login_notice");
+    if (notice) {
+      showMsg(notice, "error");
+      sessionStorage.removeItem("login_notice");
+    }
+  }, []);
+
   function showMsg(text: string, type: MessageType) {
     setMessage(text);
     setMessageType(type);
@@ -35,8 +43,12 @@ export default function LoginPage() {
 
       showMsg("Accesso riuscito. Reindirizzamento in corso...", "success");
       router.push("/");
-    } catch {
-      showMsg(LOGIN_ERROR_MESSAGE, "error");
+    } catch (err) {
+      if (err instanceof AuthAccessError) {
+        showMsg(err.message, "error");
+      } else {
+        showMsg(LOGIN_ERROR_MESSAGE, "error");
+      }
     } finally {
       setLoading(false);
     }
@@ -174,6 +186,9 @@ export default function LoginPage() {
               </p>
 
               <div className="auth-links">
+                <Link href="/signup" className="auth-text-link">
+                  Richiedi accesso / Registrati
+                </Link>
                 <Link href="/privacy" className="auth-text-link">
                   Privacy e note legali
                 </Link>
@@ -551,6 +566,8 @@ export default function LoginPage() {
         .auth-links {
           display: flex;
           justify-content: center;
+          flex-wrap: wrap;
+          gap: 12px 18px;
           margin-top: 14px;
         }
 

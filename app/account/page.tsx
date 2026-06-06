@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut, updateUserProfile } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  fetchUserProfile,
+  formatPlanLabel,
+  formatStatusLabel,
+  isAdminProfile,
+} from "@/lib/userProfile";
 
 const emptyProfile = () => ({
   nome: "",
@@ -42,6 +48,7 @@ export default function AccountPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [profile, setProfile] = useState(emptyProfile());
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -59,6 +66,14 @@ export default function AccountPage() {
         if (!cancelled) {
           setUser(u);
           setProfile(profileFromMetadata(u?.user_metadata));
+          if (u?.id) {
+            try {
+              const p = await fetchUserProfile(u.id);
+              if (!cancelled) setUserProfile(p);
+            } catch {
+              if (!cancelled) setUserProfile(null);
+            }
+          }
         }
       } catch {
         if (!cancelled) {
@@ -77,6 +92,17 @@ export default function AccountPage() {
         const u = session?.user ?? null;
         setUser(u);
         setProfile(profileFromMetadata(u?.user_metadata));
+        if (u?.id) {
+          fetchUserProfile(u.id)
+            .then(p => {
+              if (!cancelled) setUserProfile(p);
+            })
+            .catch(() => {
+              if (!cancelled) setUserProfile(null);
+            });
+        } else {
+          setUserProfile(null);
+        }
       }
     });
 
@@ -174,9 +200,30 @@ export default function AccountPage() {
                     </div>
                     <div className="account-readonly-item">
                       <span className="account-readonly-label">Stato account</span>
-                      <span className="account-status">Account attivo</span>
+                      <span className="account-status">
+                        {userProfile ? formatStatusLabel(userProfile.status) : "Account attivo"}
+                      </span>
+                    </div>
+                    <div className="account-readonly-item">
+                      <span className="account-readonly-label">Piano</span>
+                      <span className="account-readonly-value">
+                        {userProfile ? formatPlanLabel(userProfile.plan) : "—"}
+                      </span>
+                    </div>
+                    <div className="account-readonly-item">
+                      <span className="account-readonly-label">Credito API</span>
+                      <span className="account-readonly-value">
+                        {userProfile
+                          ? `€ ${Number(userProfile.api_credit_eur || 0).toFixed(2)}`
+                          : "—"}
+                      </span>
                     </div>
                   </div>
+                  {isAdminProfile(userProfile) ? (
+                    <p className="account-admin-link">
+                      <Link href="/admin/users">Gestione utenti amministratore</Link>
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="account-section">
@@ -450,6 +497,17 @@ export default function AccountPage() {
           background: #ecfdf5;
           color: #047857;
           border: 1px solid #a7f3d0;
+        }
+
+        .account-admin-link {
+          margin: 14px 0 0;
+          font-size: 13px;
+        }
+
+        .account-admin-link :global(a) {
+          color: #2563eb;
+          font-weight: 700;
+          text-decoration: underline;
         }
 
         .account-form-grid {

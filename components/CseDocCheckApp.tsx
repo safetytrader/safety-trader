@@ -3,7 +3,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "@/lib/auth";
+import { signOut, ensureApprovedSession } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import { getCantieriApp, replaceMaestranzeImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
@@ -119,18 +119,41 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const auth = session?.user ?? null;
-      setAuthUser(auth);
-      await loadCantieriForUser(auth);
-      setAuthChecked(true);
+      try {
+        const approved = await ensureApprovedSession();
+        const auth = approved?.user ?? null;
+        setAuthUser(auth);
+        await loadCantieriForUser(auth);
+      } catch (err) {
+        setAuthUser(null);
+        setCantieri([]);
+        if (typeof window !== "undefined") {
+          const msg = err instanceof Error ? err.message : "";
+          if (msg) sessionStorage.setItem("login_notice", msg);
+        }
+      } finally {
+        setAuthChecked(true);
+      }
     })();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const auth = session?.user ?? null;
-      setAuthUser(auth);
-      loadCantieriForUser(auth);
-      setAuthChecked(true);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      try {
+        if (!session?.user) {
+          setAuthUser(null);
+          await loadCantieriForUser(null);
+          setAuthChecked(true);
+          return;
+        }
+        const approved = await ensureApprovedSession();
+        const auth = approved?.user ?? null;
+        setAuthUser(auth);
+        await loadCantieriForUser(auth);
+      } catch {
+        setAuthUser(null);
+        setCantieri([]);
+      } finally {
+        setAuthChecked(true);
+      }
     });
 
     return () => subscription.unsubscribe();

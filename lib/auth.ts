@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import { fetchUserProfile, syncProfilePersonalFields } from "@/lib/userProfile";
 
 export type ProfileData = {
   nome?: string;
@@ -8,6 +9,16 @@ export type ProfileData = {
   sede_cap?: string;
   sede_citta?: string;
 };
+
+export class AuthAccessError extends Error {
+  code: "PENDING_APPROVAL" | "ACCOUNT_BLOCKED" | "NOT_AUTHORIZED";
+
+  constructor(code: AuthAccessError["code"], message: string) {
+    super(message);
+    this.name = "AuthAccessError";
+    this.code = code;
+  }
+}
 
 function normalizeProfileData(profileData?: ProfileData) {
   if (!profileData) return {};
@@ -30,6 +41,28 @@ export async function getCurrentUser() {
 export async function signIn(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+
+  const profile = data.user ? await fetchUserProfile(data.user.id) : null;
+  if (!profile || profile.status !== "approved") {
+    await supabase.auth.signOut();
+    if (profile?.status === "pending") {
+      throw new AuthAccessError(
+        "PENDING_APPROVAL",
+        "Registrazione in attesa di approvazione amministratore."
+      );
+    }
+    if (profile?.status === "blocked") {
+      throw new AuthAccessError(
+        "ACCOUNT_BLOCKED",
+        "Account bloccato. Contatta l'amministratore."
+      );
+    }
+    throw new AuthAccessError(
+      "NOT_AUTHORIZED",
+      "Account non autorizzato o credenziali non valide."
+    );
+  }
+
   return data;
 }
 
@@ -47,6 +80,15 @@ export async function signUp(
     },
   });
   if (error) throw error;
+
+  if (result.user?.id) {
+    try {
+      await syncProfilePersonalFields(result.user.id, data);
+    } catch {
+      /* profilo creato dal trigger DB; sync best-effort */
+    }
+  }
+
   return result;
 }
 
@@ -54,7 +96,50 @@ export async function updateUserProfile(profileData: ProfileData) {
   const data = normalizeProfileData(profileData);
   const { data: result, error } = await supabase.auth.updateUser({ data });
   if (error) throw error;
+
+  const userId = result.user?.id;
+  if (userId) {
+    try {
+      await syncProfilePersonalFields(userId, data);
+    } catch {
+      /* best-effort sync tabella profiles */
+    }
+  }
+
   return result;
+}
+
+/** Verifica che l'utente corrente sia approvato; altrimenti esegue logout. */
+export async function ensureApprovedSession() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!user) return null;
+
+  const profile = await fetchUserProfile(user.id);
+  if (!profile || profile.status !== "approved") {
+    await supabase.auth.signOut();
+    if (profile?.status === "pending") {
+      throw new AuthAccessError(
+        "PENDING_APPROVAL",
+        "Registrazione in attesa di approvazione amministratore."
+      );
+    }
+    if (profile?.status === "blocked") {
+      throw new AuthAccessError(
+        "ACCOUNT_BLOCKED",
+        "Account bloccato. Contatta l'amministratore."
+      );
+    }
+    throw new AuthAccessError(
+      "NOT_AUTHORIZED",
+      "Account non autorizzato."
+    );
+  }
+
+  return { user, profile };
 }
 
 export async function signOut() {
