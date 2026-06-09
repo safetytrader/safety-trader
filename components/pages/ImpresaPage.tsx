@@ -28,6 +28,7 @@ export function ImpresaPage({
   c,
   imp,
   user,
+  userProfile,
   authUser,
   onLogout,
   activeCantiere,
@@ -163,6 +164,7 @@ export function ImpresaPage({
                   activeCantiere={activeCantiere}
                   activeImpresa={activeImpresa}
                   updateImpresa={updateImpresa}
+                  userProfile={userProfile}
                 />
               )}
 

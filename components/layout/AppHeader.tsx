@@ -6,7 +6,8 @@ import Link from "next/link";
 export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
   const displayName =
     user?.displayName || `${user?.nome || ""} ${user?.cognome || ""}`.trim() || "Utente";
-  const displaySub = user?.displaySub || user?.ruolo || "";
+  const displaySub = user?.displaySub || "";
+  const plan = user?.plan || null;
   const initials =
     user?.initials ||
     `${user?.nome?.[0] || ""}${user?.cognome?.[0] || ""}`.toUpperCase() ||
@@ -39,7 +40,19 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
             <div className="app-header-user-meta">
               <div className="app-header-user-name">{displayName}</div>
               {displaySub ? (
-                <div className="app-header-user-sub">{displaySub}</div>
+                <div
+                  className={`app-header-user-sub${
+                    plan === "free"
+                      ? " app-header-plan-free"
+                      : plan === "trial"
+                        ? " app-header-plan-trial"
+                        : plan === "paid"
+                          ? " app-header-plan-paid"
+                          : ""
+                  }`}
+                >
+                  {displaySub}
+                </div>
               ) : null}
             </div>
           </Link>
@@ -303,6 +316,21 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .app-header-user-sub.app-header-plan-free {
+          color: #cbd5e1;
+          font-weight: 700;
+        }
+
+        .app-header-user-sub.app-header-plan-trial {
+          color: #fcd34d;
+          font-weight: 700;
+        }
+
+        .app-header-user-sub.app-header-plan-paid {
+          color: #86efac;
+          font-weight: 700;
         }
 
         .app-header-logout {

@@ -4,6 +4,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, ensureApprovedSession } from "@/lib/auth";
+import { formatHeaderPlanSub } from "@/lib/userProfile";
 import { supabase } from "@/lib/supabaseClient";
 import { getCantieriApp, replaceMaestranzeImpresa } from "@/lib/db";
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from "@/lib/storage";
@@ -50,7 +51,7 @@ function isMissingAuthSessionMessage(message) {
   return msg.includes("auth session missing") || msg.includes("session missing");
 }
 
-function headerUserFromAuth(authUser) {
+function headerUserFromAuth(authUser, userProfile) {
   if (!authUser) {
     return {
       nome: "",
@@ -60,16 +61,16 @@ function headerUserFromAuth(authUser) {
       initials: "ST",
       displayName: "",
       displaySub: "",
+      plan: null,
     };
   }
   const m = authUser.user_metadata || {};
-  const nome = String(m.nome ?? "").trim();
-  const cognome = String(m.cognome ?? "").trim();
-  const societa = String(m.societa ?? "").trim();
-  const email = String(authUser.email ?? "").trim();
+  const nome = String(m.nome ?? userProfile?.nome ?? "").trim();
+  const cognome = String(m.cognome ?? userProfile?.cognome ?? "").trim();
+  const email = String(authUser.email ?? userProfile?.email ?? "").trim();
   const fullName = [nome, cognome].filter(Boolean).join(" ");
   const displayName = fullName || email || "Utente";
-  const displaySub = societa || "";
+  const displaySub = formatHeaderPlanSub(userProfile);
 
   let initials = "U";
   if (nome && cognome) initials = `${nome[0]}${cognome[0]}`.toUpperCase();
@@ -86,6 +87,7 @@ function headerUserFromAuth(authUser) {
     initials,
     displayName,
     displaySub,
+    plan: userProfile?.plan ?? null,
   };
 }
 
@@ -95,8 +97,12 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [cantieri, setCantieri] = useState([]);
   const [authUser, setAuthUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const headerUser = useMemo(() => headerUserFromAuth(authUser), [authUser]);
+  const headerUser = useMemo(
+    () => headerUserFromAuth(authUser, userProfile),
+    [authUser, userProfile]
+  );
 
   const loadCantieriForUser = useCallback(async auth => {
     if (!auth) {
@@ -123,9 +129,11 @@ export default function App() {
         const approved = await ensureApprovedSession();
         const auth = approved?.user ?? null;
         setAuthUser(auth);
+        setUserProfile(approved?.profile ?? null);
         await loadCantieriForUser(auth);
       } catch (err) {
         setAuthUser(null);
+        setUserProfile(null);
         setCantieri([]);
         if (typeof window !== "undefined") {
           const msg = err instanceof Error ? err.message : "";
@@ -140,6 +148,7 @@ export default function App() {
       try {
         if (!session?.user) {
           setAuthUser(null);
+          setUserProfile(null);
           await loadCantieriForUser(null);
           setAuthChecked(true);
           return;
@@ -147,9 +156,11 @@ export default function App() {
         const approved = await ensureApprovedSession();
         const auth = approved?.user ?? null;
         setAuthUser(auth);
+        setUserProfile(approved?.profile ?? null);
         await loadCantieriForUser(auth);
       } catch {
         setAuthUser(null);
+        setUserProfile(null);
         setCantieri([]);
       } finally {
         setAuthChecked(true);
@@ -402,6 +413,7 @@ export default function App() {
           c={c}
           imp={imp}
           user={headerUser}
+          userProfile={userProfile}
           authUser={authUser}
           onLogout={authUser ? handleLogout : null}
           activeCantiere={activeCantiere}

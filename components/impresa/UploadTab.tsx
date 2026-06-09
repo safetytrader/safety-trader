@@ -14,6 +14,7 @@ import {
   buildAnalyzeFetchPayload,
   planAnalyzeRequest,
 } from "@/lib/prepareAnalyzeRequest";
+import { canUseAiAnalysis, getAiUploadBlockMessage } from "@/lib/aiAccess";
 
 const EXTRACTED_FIELD_LABELS = {
   impresa: "Impresa",
@@ -87,7 +88,7 @@ async function parseJsonResponse(res) {
   }
 }
 
-export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa }) {
+export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, userProfile }) {
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -97,9 +98,19 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
   const [batchQueue, setBatchQueue] = useState([]);
   const [resultModal, setResultModal] = useState(null);
 
+  const aiBlockMessage = getAiUploadBlockMessage(userProfile);
+  const aiEnabled = canUseAiAnalysis(userProfile);
+
   const runAnalysis = async (file, options = {}) => {
     const { silentResult = false } = options;
     if (!file || analyzing) return;
+
+    if (!aiEnabled) {
+      const blockMsg =
+        aiBlockMessage || "Il tuo piano non include analisi AI.";
+      if (!silentResult) setErrorMessage(blockMsg);
+      return { ok: false, error: blockMsg };
+    }
 
     setAnalyzing(true);
     setStatusPhase("analyzing");
@@ -294,6 +305,12 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
   };
 
   const handleSelectedFiles = fileList => {
+    if (!aiEnabled) {
+      setErrorMessage(
+        aiBlockMessage || "Il tuo piano non include analisi AI."
+      );
+      return;
+    }
     const files = pickAnalyzeFiles(fileList);
     if (!files.length) {
       setErrorMessage("Seleziona un file PDF o un'immagine.");
@@ -328,6 +345,11 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                 Carica un documento per analizzarlo automaticamente e compilare
                 checklist, allegati e maestranze.
               </p>
+              {aiBlockMessage ? (
+                <p className="upload-plan-block" role="status">
+                  {aiBlockMessage}
+                </p>
+              ) : null}
             </div>
           </header>
 
@@ -335,24 +357,25 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
             <div
               className={`upload-dropzone ${dragOver ? "upload-dropzone-active" : ""} ${
                 analyzing ? "upload-dropzone-busy" : ""
-              }`}
+              } ${!aiEnabled ? "upload-dropzone-disabled" : ""}`}
               onDragOver={e => {
                 e.preventDefault();
-                if (!analyzing) setDragOver(true);
+                if (!analyzing && aiEnabled) setDragOver(true);
               }}
               onDragLeave={() => setDragOver(false)}
               onDrop={e => {
                 e.preventDefault();
                 setDragOver(false);
-                if (!analyzing) handleSelectedFiles(e.dataTransfer.files);
+                if (!analyzing && aiEnabled) handleSelectedFiles(e.dataTransfer.files);
               }}
               onClick={() => {
-                if (!analyzing) fileRef.current?.click();
+                if (!analyzing && aiEnabled) fileRef.current?.click();
               }}
               role="button"
-              tabIndex={0}
+              tabIndex={aiEnabled ? 0 : -1}
+              aria-disabled={!aiEnabled}
               onKeyDown={e => {
-                if ((e.key === "Enter" || e.key === " ") && !analyzing) {
+                if ((e.key === "Enter" || e.key === " ") && !analyzing && aiEnabled) {
                   fileRef.current?.click();
                 }
               }}
@@ -363,7 +386,7 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
                 multiple
                 accept=".pdf,image/*"
                 className="upload-input"
-                disabled={analyzing}
+                disabled={analyzing || !aiEnabled}
                 onChange={e => handleSelectedFiles(e.target.files)}
               />
               <div className="upload-drop-mark" aria-hidden>
@@ -394,13 +417,13 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
               <button
                 type="button"
                 className="upload-btn upload-btn-primary"
-                disabled={analyzing}
+                disabled={analyzing || !aiEnabled}
                 onClick={e => {
                   e.stopPropagation();
-                  fileRef.current?.click();
+                  if (aiEnabled) fileRef.current?.click();
                 }}
               >
-                Seleziona file
+                {aiEnabled ? "Seleziona file" : "Analisi AI disabilitata"}
               </button>
             </div>
 
@@ -636,6 +659,24 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa })
         .upload-dropzone-busy {
           cursor: wait;
           opacity: 0.85;
+        }
+
+        .upload-dropzone-disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+
+        .upload-plan-block {
+          margin: 10px 0 0;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid #fde68a;
+          background: #fffbeb;
+          color: #92400e;
+          font-size: 13px;
+          line-height: 1.45;
+          font-weight: 600;
         }
 
         .upload-input {

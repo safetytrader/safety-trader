@@ -44,6 +44,16 @@ export function formatPlanLabel(plan: UserPlan) {
   }
 }
 
+/** Sottotitolo header utente da public.profiles (solo approved). */
+export function formatHeaderPlanSub(
+  profile: Pick<UserProfile, "status" | "plan"> | null | undefined
+): string {
+  if (!profile || profile.status !== "approved") return "";
+  const label = formatPlanLabel(profile.plan);
+  if (profile.plan === "free") return `${label} · AI disabilitata`;
+  return label;
+}
+
 export function formatStatusLabel(status: UserStatus) {
   switch (status) {
     case "approved":

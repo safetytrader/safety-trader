@@ -45,6 +45,7 @@ import {
   isTextSufficient,
 } from "@/lib/pdfText";
 import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
+import { evaluateAiAccess } from "@/lib/aiAccess";
 
 export const runtime = "nodejs";
 
@@ -161,7 +162,34 @@ export async function POST(request: Request) {
 
     const accessToken = getBearerToken(request);
     if (!accessToken) {
-      return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
+      return jsonError("Utente non autenticato.", 401);
+    }
+
+    const supabase = createSupabaseServer(accessToken);
+    cleanupSupabase = supabase;
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return jsonError("Utente non autenticato.", 401);
+    }
+
+    const { data: userProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("status, plan, api_credit_eur, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      return jsonError("Errore lettura profilo utente.", 500);
+    }
+
+    const aiAccess = evaluateAiAccess(userProfile);
+    if (!aiAccess.allowed) {
+      return jsonError(aiAccess.error, aiAccess.status);
     }
 
     let routeMode: RouteMode = "FILE_SMALL";
@@ -249,18 +277,6 @@ export async function POST(request: Request) {
       if (!buffer.length) {
         return jsonError("Documento non leggibile dall'AI.", 422);
       }
-    }
-
-    const supabase = createSupabaseServer(accessToken);
-    cleanupSupabase = supabase;
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return jsonError("Sessione non valida. Effettua di nuovo l'accesso.", 401);
     }
 
     if (jsonTemporaryStoragePath) {

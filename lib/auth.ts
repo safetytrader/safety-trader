@@ -48,14 +48,11 @@ export async function signIn(email: string, password: string) {
     if (profile?.status === "pending") {
       throw new AuthAccessError(
         "PENDING_APPROVAL",
-        "Registrazione in attesa di approvazione amministratore."
+        "Account in attesa di approvazione."
       );
     }
     if (profile?.status === "blocked") {
-      throw new AuthAccessError(
-        "ACCOUNT_BLOCKED",
-        "Account bloccato. Contatta l'amministratore."
-      );
+      throw new AuthAccessError("ACCOUNT_BLOCKED", "Account bloccato.");
     }
     throw new AuthAccessError(
       "NOT_AUTHORIZED",
@@ -124,14 +121,11 @@ export async function ensureApprovedSession() {
     if (profile?.status === "pending") {
       throw new AuthAccessError(
         "PENDING_APPROVAL",
-        "Registrazione in attesa di approvazione amministratore."
+        "Account in attesa di approvazione."
       );
     }
     if (profile?.status === "blocked") {
-      throw new AuthAccessError(
-        "ACCOUNT_BLOCKED",
-        "Account bloccato. Contatta l'amministratore."
-      );
+      throw new AuthAccessError("ACCOUNT_BLOCKED", "Account bloccato.");
     }
     throw new AuthAccessError(
       "NOT_AUTHORIZED",
