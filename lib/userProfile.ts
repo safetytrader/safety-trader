@@ -46,12 +46,13 @@ export function formatPlanLabel(plan: UserPlan) {
 
 /** Sottotitolo header utente da public.profiles (solo approved). */
 export function formatHeaderPlanSub(
-  profile: Pick<UserProfile, "status" | "plan"> | null | undefined
+  profile: Pick<UserProfile, "status" | "plan" | "api_credit_eur"> | null | undefined
 ): string {
   if (!profile || profile.status !== "approved") return "";
   const label = formatPlanLabel(profile.plan);
   if (profile.plan === "free") return `${label} · AI disabilitata`;
-  return label;
+  const credit = Number(profile.api_credit_eur ?? 0);
+  return `${label} · €${credit.toFixed(2)}`;
 }
 
 export function formatStatusLabel(status: UserStatus) {

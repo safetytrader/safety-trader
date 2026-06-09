@@ -46,6 +46,12 @@ import {
 } from "@/lib/pdfText";
 import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 import { evaluateAiAccess } from "@/lib/aiAccess";
+import { consumeAiCreditAfterAnalysis } from "@/lib/aiCredit";
+import {
+  beginAiUsageCollection,
+  clearAiUsageCollection,
+  takeAiUsageCollection,
+} from "@/lib/aiUsageContext";
 
 export const runtime = "nodejs";
 
@@ -300,6 +306,8 @@ export async function POST(request: Request) {
     console.log("[AI] has extractedPages", Boolean(clientPageTexts?.length));
     console.log("[AI] mode", routeMode);
     console.log("[AI] fileSize", fileSize);
+
+    beginAiUsageCollection();
 
     let analysisMode: AnalysisMode = "FILE_FALLBACK";
     let rawAiResponse = "";
@@ -592,6 +600,22 @@ export async function POST(request: Request) {
     });
     console.timeEnd("[AI] db");
 
+    const usageEntries = takeAiUsageCollection();
+    let aiUsage = null;
+    try {
+      aiUsage = await consumeAiCreditAfterAnalysis({
+        userId: user.id,
+        documentName: fileName,
+        documentType: String(documentType || ""),
+        usageEntries,
+      });
+    } catch (creditErr) {
+      console.error(
+        "[AI credit] consumo credito fallito",
+        creditErr instanceof Error ? creditErr.message : creditErr
+      );
+    }
+
     return Response.json({
       ok: true,
       document_type: documentType,
@@ -618,6 +642,7 @@ export async function POST(request: Request) {
         String(documentType || "").toUpperCase() === "IDONEITA"
           ? debugIdoneita
           : null,
+      ai_usage: aiUsage,
       state: {
         checks: applied.checks,
         checkRefs: applied.checkRefs,
@@ -627,6 +652,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error: unknown) {
+    clearAiUsageCollection();
     const mapped = mapOpenAiError(error, hasApiKey);
     const message =
       mapped !== "Chiave OpenAI non configurata." &&
@@ -641,6 +667,7 @@ export async function POST(request: Request) {
 
     return jsonError(message, status, error instanceof Error ? error.message : null);
   } finally {
+    clearAiUsageCollection();
     if (tempPathToDelete && cleanupSupabase) {
       await removeAiTempFile(cleanupSupabase, tempPathToDelete);
     }

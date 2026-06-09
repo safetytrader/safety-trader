@@ -29,6 +29,7 @@ export function ImpresaPage({
   imp,
   user,
   userProfile,
+  onAiUsageComplete,
   authUser,
   onLogout,
   activeCantiere,
@@ -165,6 +166,7 @@ export function ImpresaPage({
                   activeImpresa={activeImpresa}
                   updateImpresa={updateImpresa}
                   userProfile={userProfile}
+                  onAiUsageComplete={onAiUsageComplete}
                 />
               )}
 

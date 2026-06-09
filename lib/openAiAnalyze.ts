@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { extractUsageFromOpenAIResponse } from "@/lib/aiPricing";
+import { recordOpenAiUsage } from "@/lib/aiUsageContext";
 
 const POS_REFS_SCHEMA = `Schema (fino a 30 elementi in checklist_evidence):
 {
@@ -177,6 +179,14 @@ async function callOpenAIResponses(content, maxOutputTokens = MAX_OUTPUT_TOKENS)
     }
     throw new Error(message);
   }
+
+  const usage = extractUsageFromOpenAIResponse(data);
+  recordOpenAiUsage({
+    model,
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    total_tokens: usage.total_tokens,
+  });
 
   const text = extractOutputText(data);
   if (!text) {

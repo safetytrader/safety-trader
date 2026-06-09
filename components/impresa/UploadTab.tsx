@@ -88,7 +88,7 @@ async function parseJsonResponse(res) {
   }
 }
 
-export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, userProfile }) {
+export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, userProfile, onAiUsageComplete }) {
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -220,8 +220,14 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, u
           pos_refs_no_text: Boolean(data.pos_refs_no_text),
           pos_refs_extraction_failed: Boolean(data.pos_refs_extraction_failed),
           pos_references_found: data.pos_references_found ?? 0,
+          ai_usage: data.ai_usage || null,
         });
       }
+
+      if (data.ai_usage && typeof onAiUsageComplete === "function") {
+        onAiUsageComplete(data.ai_usage);
+      }
+
       return { ok: true };
     } catch (err) {
       if (uploadedTempPath) {
@@ -518,6 +524,18 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, u
                 {resultModal.summary ? (
                   <p className="upload-ai-modal-muted">{resultModal.summary}</p>
                 ) : null}
+                {resultModal.ai_usage ? (
+                  <div className="upload-ai-modal-credit">
+                    <p>
+                      <strong>Costo analisi:</strong> €
+                      {Number(resultModal.ai_usage.cost_eur || 0).toFixed(4)}
+                    </p>
+                    <p>
+                      <strong>Credito residuo:</strong> €
+                      {Number(resultModal.ai_usage.credit_after || 0).toFixed(2)}
+                    </p>
+                  </div>
+                ) : null}
                 {getVisibleExtractedEntries(resultModal.extracted_data).length > 0 ? (
                   <div>
                     <p className="upload-ai-modal-section">Dati estratti principali</p>
@@ -806,6 +824,24 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, u
           margin: 0;
           color: #64748b;
           font-size: 13px;
+        }
+
+        .upload-ai-modal-credit {
+          margin: 10px 0 0;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          font-size: 13px;
+          color: #1e3a8a;
+        }
+
+        .upload-ai-modal-credit p {
+          margin: 0 0 4px;
+        }
+
+        .upload-ai-modal-credit p:last-child {
+          margin-bottom: 0;
         }
 
         .upload-ai-modal-error {

@@ -183,9 +183,23 @@ export default function App() {
       console.error("Errore logout:", err?.message || err);
     }
     setAuthUser(null);
+    setUserProfile(null);
     setCantieri([]);
     router.push("/login");
   }, [router]);
+
+  const handleAiUsageComplete = useCallback(aiUsage => {
+    if (!aiUsage) return;
+    setUserProfile(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        api_credit_eur: Number(aiUsage.credit_after ?? prev.api_credit_eur ?? 0),
+        api_spent_eur:
+          Number(prev.api_spent_eur || 0) + Number(aiUsage.cost_eur || 0),
+      };
+    });
+  }, []);
   
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.cantieri, cantieri);
@@ -414,6 +428,7 @@ export default function App() {
           imp={imp}
           user={headerUser}
           userProfile={userProfile}
+          onAiUsageComplete={handleAiUsageComplete}
           authUser={authUser}
           onLogout={authUser ? handleLogout : null}
           activeCantiere={activeCantiere}
