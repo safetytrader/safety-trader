@@ -6,8 +6,10 @@ import { Modal } from "@/components/ui/Modal";
 import { supabase } from "@/lib/supabaseClient";
 import {
   formatAppliedSummary,
+  formatChangeValueForUi,
   formatSkippedSummary,
 } from "@/lib/documentAnalysis";
+import { formatEur4 } from "@/lib/userProfile";
 import { AI_TEMP_BUCKET, uploadFileToAiTemp } from "@/lib/aiTempStorage";
 import { shouldUploadPosTempForAnalysis } from "@/lib/likelyPosDocument";
 import {
@@ -528,11 +530,11 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, u
                   <div className="upload-ai-modal-credit">
                     <p>
                       <strong>Costo analisi:</strong> €
-                      {Number(resultModal.ai_usage.cost_eur || 0).toFixed(4)}
+                      {formatEur4(resultModal.ai_usage.cost_eur)}
                     </p>
                     <p>
                       <strong>Credito residuo:</strong> €
-                      {Number(resultModal.ai_usage.credit_after || 0).toFixed(2)}
+                      {formatEur4(resultModal.ai_usage.credit_after)}
                     </p>
                   </div>
                 ) : null}
@@ -540,11 +542,15 @@ export function UploadTab({ imp, activeCantiere, activeImpresa, updateImpresa, u
                   <div>
                     <p className="upload-ai-modal-section">Dati estratti principali</p>
                     <ul className="upload-ai-modal-list">
-                      {getVisibleExtractedEntries(resultModal.extracted_data).map(([k, v]) => (
-                        <li key={k}>
-                          {formatExtractedLabel(k)}: {String(v)}
-                        </li>
-                      ))}
+                      {getVisibleExtractedEntries(resultModal.extracted_data).map(([k, v]) => {
+                        const label = formatChangeValueForUi(v);
+                        if (label == null) return null;
+                        return (
+                          <li key={k}>
+                            {formatExtractedLabel(k)}: {label}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ) : null}

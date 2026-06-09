@@ -25,6 +25,13 @@ export type UserProfile = {
 export const USER_PLANS: UserPlan[] = ["free", "trial", "paid"];
 export const USER_STATUSES: UserStatus[] = ["pending", "approved", "blocked"];
 
+/** Importi EUR con 4 decimali (UI credito AI). */
+export function formatEur4(value: number | string | null | undefined): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "0.0000";
+  return n.toFixed(4);
+}
+
 export function isApprovedProfile(profile: Pick<UserProfile, "status"> | null | undefined) {
   return profile?.status === "approved";
 }
@@ -51,8 +58,7 @@ export function formatHeaderPlanSub(
   if (!profile || profile.status !== "approved") return "";
   const label = formatPlanLabel(profile.plan);
   if (profile.plan === "free") return `${label} · AI disabilitata`;
-  const credit = Number(profile.api_credit_eur ?? 0);
-  return `${label} · €${credit.toFixed(2)}`;
+  return `${label} · €${formatEur4(profile.api_credit_eur)}`;
 }
 
 export function formatStatusLabel(status: UserStatus) {
@@ -84,6 +90,15 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile | null> {
   return fetchUserProfile(data.user.id);
 }
 
+const PROFILE_PERSONAL_FIELD_KEYS = [
+  "nome",
+  "cognome",
+  "societa",
+  "sede_via",
+  "sede_cap",
+  "sede_citta",
+] as const;
+
 export async function syncProfilePersonalFields(
   userId: string,
   fields: {
@@ -95,14 +110,10 @@ export async function syncProfilePersonalFields(
     sede_citta?: string;
   }
 ) {
-  const payload = {
-    nome: String(fields.nome ?? "").trim(),
-    cognome: String(fields.cognome ?? "").trim(),
-    societa: String(fields.societa ?? "").trim(),
-    sede_via: String(fields.sede_via ?? "").trim(),
-    sede_cap: String(fields.sede_cap ?? "").trim(),
-    sede_citta: String(fields.sede_citta ?? "").trim(),
-  };
+  const payload: Record<string, string> = {};
+  for (const key of PROFILE_PERSONAL_FIELD_KEYS) {
+    payload[key] = String(fields[key] ?? "").trim();
+  }
   const { error } = await supabase.from("profiles").update(payload).eq("id", userId);
   if (error) throw error;
 }

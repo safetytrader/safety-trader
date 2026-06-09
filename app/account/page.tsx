@@ -10,6 +10,7 @@ import {
   fetchUserProfile,
   formatPlanLabel,
   formatStatusLabel,
+  formatEur4,
   isAdminProfile,
 } from "@/lib/userProfile";
 
@@ -214,7 +215,7 @@ export default function AccountPage() {
                       <span className="account-readonly-label">Credito API</span>
                       <span className="account-readonly-value">
                         {userProfile
-                          ? `€ ${Number(userProfile.api_credit_eur || 0).toFixed(2)}`
+                          ? `€ ${formatEur4(userProfile.api_credit_eur)}`
                           : "—"}
                       </span>
                     </div>

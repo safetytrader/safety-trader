@@ -2069,16 +2069,19 @@ export function formatAppliedSummary(applied_changes = {}, options = {}) {
   }
   const lines = [];
   for (const [k, v] of Object.entries(applied_changes.checklist || {})) {
-    lines.push(`Checklist: ${k} → ${v}`);
+    const text = formatChangeValueForUi(v);
+    if (text != null) lines.push(`Checklist: ${k} → ${text}`);
   }
   for (const [k, v] of Object.entries(applied_changes.checkRefs || {})) {
-    lines.push(`Rif. pag. ${k}: ${v}`);
+    const text = formatChangeValueForUi(v);
+    if (text != null) lines.push(`Rif. pag. ${k}: ${text}`);
   }
   for (const [k] of Object.entries(applied_changes.allegati || {})) {
     lines.push(`Allegato presente: ${k}`);
   }
   for (const [k, v] of Object.entries(applied_changes.allegatiScadenze || {})) {
-    lines.push(`Scadenza allegato ${k}: ${v}`);
+    const text = formatChangeValueForUi(v);
+    if (text != null) lines.push(`Scadenza allegato ${k}: ${text}`);
   }
   for (const m of applied_changes.maestranze || []) {
     if (m.created) lines.push(`Nuova maestranza: ${m.nome}`);
@@ -2095,20 +2098,76 @@ export function formatSkippedSummary(skipped_changes = {}, options = {}) {
   }
   const lines = [];
   for (const [k, v] of Object.entries(skipped_changes.checklist || {})) {
-    lines.push(`Checklist ${k}: già "${v.existing}"`);
+    const existing = formatChangeValueForUi(v?.existing ?? v);
+    if (existing != null) lines.push(`Checklist ${k}: già "${existing}"`);
   }
   for (const [k, v] of Object.entries(skipped_changes.checkRefs || {})) {
-    lines.push(`Rif. pag. ${k}: già "${v.existing}"`);
+    const existing = formatChangeValueForUi(v?.existing ?? v);
+    if (existing != null) lines.push(`Rif. pag. ${k}: già "${existing}"`);
   }
   for (const [k, v] of Object.entries(skipped_changes.allegati || {})) {
     lines.push(`Allegato ${k}: già presente`);
   }
   for (const [k, v] of Object.entries(skipped_changes.allegatiScadenze || {})) {
-    lines.push(`Scadenza ${k}: già "${v.existing}"`);
+    const existing = formatChangeValueForUi(v?.existing ?? v);
+    if (existing != null) lines.push(`Scadenza ${k}: già "${existing}"`);
   }
   for (const m of skipped_changes.maestranze || []) {
     const fields = Object.keys(m.fields || {}).join(", ");
     lines.push(`Maestranza ${m.nome}: campi già compilati (${fields})`);
   }
   return lines;
+}
+
+/** Valore leggibile per UI modale analisi (mai [object Object]). */
+export function formatChangeValueForUi(raw) {
+  if (raw == null || raw === "") return null;
+
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) return null;
+    return formatDateLikeForUi(t) || t;
+  }
+
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return String(raw);
+  }
+
+  if (typeof raw === "object") {
+    const candidate =
+      raw.value ??
+      raw.date ??
+      raw.scadenza ??
+      raw.data_scadenza ??
+      raw.label ??
+      raw.text;
+    if (candidate != null && candidate !== raw) {
+      return formatChangeValueForUi(candidate);
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function formatDateLikeForUi(value) {
+  const t = String(value || "").trim();
+  if (!t) return null;
+
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const day = String(parseInt(iso[3], 10)).padStart(2, "0");
+    const month = String(parseInt(iso[2], 10)).padStart(2, "0");
+    return `${day}/${month}/${iso[1]}`;
+  }
+
+  const slash = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (slash) {
+    const day = String(parseInt(slash[1], 10)).padStart(2, "0");
+    const month = String(parseInt(slash[2], 10)).padStart(2, "0");
+    const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${day}/${month}/${year}`;
+  }
+
+  return null;
 }

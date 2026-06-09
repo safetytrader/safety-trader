@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import {
   formatPlanLabel,
   formatStatusLabel,
+  formatEur4,
   isAdminProfile,
   type UserPlan,
   type UserProfile,
@@ -210,8 +211,8 @@ export default function AdminUsersPage() {
                     ))}
                   </select>
                 </td>
-                <td>{Number(user.api_credit_eur || 0).toFixed(2)}</td>
-                <td>{Number(user.api_spent_eur || 0).toFixed(2)}</td>
+                <td>€{formatEur4(user.api_credit_eur)}</td>
+                <td>€{formatEur4(user.api_spent_eur)}</td>
                 <td className="actions-cell">
                   {user.status !== "approved" ? (
                     <button
