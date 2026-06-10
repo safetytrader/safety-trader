@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { signOut } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+import { roundCreditEur } from "@/lib/adminUsersUpdate";
 import {
   formatPlanLabel,
   formatStatusLabel,
@@ -34,7 +35,9 @@ async function adminFetch(path: string, init?: RequestInit) {
 
   const data = await res.json();
   if (!res.ok || !data.ok) {
-    const base = data.error || "Operazione non riuscita.";
+    if (res.status === 401) throw new Error("Sessione scaduta.");
+    if (res.status === 403) throw new Error("Non autorizzato.");
+    const base = data.error || "Errore salvataggio utente.";
     if (data.adminConfigured === false) {
       throw new Error(
         `${base} Verifica .env.local e riavvia \`npm run dev\`.`
@@ -111,22 +114,40 @@ export default function AdminUsersPage() {
     setMessageType(type);
   }
 
-  async function patchUser(
+  async function updateUser(
     userId: string,
-    patch: { status?: UserStatus; plan?: UserPlan; addCreditEur?: number }
+    updates: {
+      status?: UserStatus;
+      plan?: UserPlan;
+      api_credit_eur?: number;
+      addCreditEur?: number;
+    }
   ) {
     setBusyId(userId);
     setMessage("");
     setMessageType(null);
     try {
-      const data = await adminFetch("/api/admin/users", {
+      const payload: Record<string, unknown> = {};
+      if (updates.status) payload.status = updates.status;
+      if (updates.plan) payload.plan = updates.plan;
+
+      if (updates.api_credit_eur != null) {
+        payload.api_credit_eur = roundCreditEur(updates.api_credit_eur);
+      } else if (updates.addCreditEur != null) {
+        const current = users.find(u => u.id === userId);
+        payload.api_credit_eur = roundCreditEur(
+          Number(current?.api_credit_eur || 0) + updates.addCreditEur
+        );
+      }
+
+      const data = await adminFetch("/api/admin/users/update", {
         method: "PATCH",
-        body: JSON.stringify({ userId, ...patch }),
+        body: JSON.stringify({ userId, updates: payload }),
       });
       setUsers(prev => prev.map(u => (u.id === userId ? (data.user as UserProfile) : u)));
       showMsg("Utente aggiornato.", "success");
     } catch (err) {
-      showMsg(err instanceof Error ? err.message : "Errore aggiornamento.", "error");
+      showMsg(err instanceof Error ? err.message : "Errore salvataggio utente.", "error");
     } finally {
       setBusyId(null);
     }
@@ -202,7 +223,7 @@ export default function AdminUsersPage() {
                   <select
                     value={user.plan}
                     disabled={busyId === user.id || user.role === "admin"}
-                    onChange={e => patchUser(user.id, { plan: e.target.value as UserPlan })}
+                    onChange={e => updateUser(user.id, { plan: e.target.value as UserPlan })}
                   >
                     {USER_PLANS.map(plan => (
                       <option key={plan} value={plan}>
@@ -219,7 +240,7 @@ export default function AdminUsersPage() {
                       type="button"
                       className="action-btn approve"
                       disabled={busyId === user.id}
-                      onClick={() => patchUser(user.id, { status: "approved" })}
+                      onClick={() => updateUser(user.id, { status: "approved" })}
                     >
                       Approva
                     </button>
@@ -229,7 +250,7 @@ export default function AdminUsersPage() {
                       type="button"
                       className="action-btn block"
                       disabled={busyId === user.id}
-                      onClick={() => patchUser(user.id, { status: "blocked" })}
+                      onClick={() => updateUser(user.id, { status: "blocked" })}
                     >
                       Blocca
                     </button>
@@ -239,7 +260,7 @@ export default function AdminUsersPage() {
                       type="button"
                       className="action-btn approve"
                       disabled={busyId === user.id}
-                      onClick={() => patchUser(user.id, { status: "approved" })}
+                      onClick={() => updateUser(user.id, { status: "approved" })}
                     >
                       Riattiva
                     </button>
@@ -265,7 +286,7 @@ export default function AdminUsersPage() {
                           showMsg("Inserisci un importo credito valido.", "error");
                           return;
                         }
-                        patchUser(user.id, { addCreditEur: amount }).then(() => {
+                        updateUser(user.id, { addCreditEur: amount }).then(() => {
                           setCreditInputs(prev => ({ ...prev, [user.id]: "" }));
                         });
                       }}

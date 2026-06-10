@@ -100,7 +100,7 @@ const PROFILE_PERSONAL_FIELD_KEYS = [
 ] as const;
 
 export async function syncProfilePersonalFields(
-  userId: string,
+  _userId: string,
   fields: {
     nome?: string;
     cognome?: string;
@@ -110,10 +110,29 @@ export async function syncProfilePersonalFields(
     sede_citta?: string;
   }
 ) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error("Sessione non valida.");
+
   const payload: Record<string, string> = {};
   for (const key of PROFILE_PERSONAL_FIELD_KEYS) {
     payload[key] = String(fields[key] ?? "").trim();
   }
-  const { error } = await supabase.from("profiles").update(payload).eq("id", userId);
-  if (error) throw error;
+
+  const res = await fetch("/api/profile/personal", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await res.json()) as { ok?: boolean; error?: string };
+  if (!res.ok || !data.ok) {
+    if (res.status === 401) throw new Error("Sessione scaduta.");
+    throw new Error(data.error || "Errore salvataggio profilo.");
+  }
 }
