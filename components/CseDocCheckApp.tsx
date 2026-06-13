@@ -62,6 +62,7 @@ function headerUserFromAuth(authUser, userProfile) {
       displayName: "",
       displaySub: "",
       plan: null,
+      role: null,
     };
   }
   const m = authUser.user_metadata || {};
@@ -88,6 +89,7 @@ function headerUserFromAuth(authUser, userProfile) {
     displayName,
     displaySub,
     plan: userProfile?.plan ?? null,
+    role: userProfile?.role ?? null,
   };
 }
 

@@ -47,6 +47,7 @@ import {
 import { createSupabaseServer, getBearerToken } from "@/lib/supabaseServer";
 import { evaluateAiAccess } from "@/lib/aiAccess";
 import { consumeAiCreditAfterAnalysis } from "@/lib/aiCredit";
+import { logAiCredit } from "@/lib/logAiCredit";
 import {
   beginAiUsageCollection,
   clearAiUsageCollection,
@@ -601,6 +602,43 @@ export async function POST(request: Request) {
     console.timeEnd("[AI] db");
 
     const usageEntries = takeAiUsageCollection();
+    const usageTotals = usageEntries.reduce(
+      (acc: any, entry: any) => {
+        const inputTokens = Number(
+          entry.input_tokens ??
+            entry.inputTokens ??
+            entry.prompt_tokens ??
+            entry.promptTokens ??
+            0
+        );
+        const outputTokens = Number(
+          entry.output_tokens ??
+            entry.outputTokens ??
+            entry.completion_tokens ??
+            entry.completionTokens ??
+            0
+        );
+        const costEur = Number(
+          entry.cost_eur ??
+            entry.costEur ??
+            entry.estimated_cost_eur ??
+            entry.estimatedCostEur ??
+            0
+        );
+        return {
+          inputTokens: acc.inputTokens + inputTokens,
+          outputTokens: acc.outputTokens + outputTokens,
+          costEur: acc.costEur + costEur,
+          model: entry.model || acc.model,
+        };
+      },
+      {
+        inputTokens: 0,
+        outputTokens: 0,
+        costEur: 0,
+        model: null,
+      }
+    );
     let aiUsage = null;
     try {
       aiUsage = await consumeAiCreditAfterAnalysis({
@@ -609,11 +647,84 @@ export async function POST(request: Request) {
         documentType: String(documentType || ""),
         usageEntries,
       });
+      try {
+        await logAiCredit({
+          userId: user.id,
+          cantiereId,
+          impresaId,
+          documentoId: null,
+          action: "analisi_documento",
+          provider: "openai",
+          model: usageTotals.model ?? null,
+          inputTokens: usageTotals.inputTokens,
+          outputTokens: usageTotals.outputTokens,
+          costEur: Number(
+            (aiUsage as any)?.costEur ??
+              (aiUsage as any)?.cost_eur ??
+              (aiUsage as any)?.analysisCostEur ??
+              (aiUsage as any)?.analysis_cost_eur ??
+              (aiUsage as any)?.amountEur ??
+              (aiUsage as any)?.amount_eur ??
+              usageTotals.costEur ??
+              0
+          ),
+          creditBefore:
+            (aiUsage as any)?.credit_before ??
+            (aiUsage as any)?.creditBefore ??
+            null,
+          creditAfter:
+            (aiUsage as any)?.credit_after ??
+            (aiUsage as any)?.creditAfter ??
+            null,
+          status: "success",
+          metadata: {
+            fileName,
+            documentType: String(documentType || ""),
+            analysisMode,
+            routeMode,
+            usageEntries,
+          },
+        });
+      } catch (logErr) {
+        console.error(
+          "[AI credit log] salvataggio log fallito",
+          logErr instanceof Error ? logErr.message : logErr
+        );
+      }
     } catch (creditErr) {
       console.error(
         "[AI credit] consumo credito fallito",
         creditErr instanceof Error ? creditErr.message : creditErr
       );
+      try {
+        await logAiCredit({
+          userId: user.id,
+          cantiereId,
+          impresaId,
+          documentoId: null,
+          action: "analisi_documento",
+          provider: "openai",
+          model: usageTotals.model ?? null,
+          inputTokens: usageTotals.inputTokens,
+          outputTokens: usageTotals.outputTokens,
+          costEur: usageTotals.costEur,
+          status: "error",
+          errorMessage:
+            creditErr instanceof Error ? creditErr.message : "Errore credito AI",
+          metadata: {
+            fileName,
+            documentType: String(documentType || ""),
+            analysisMode,
+            routeMode,
+            usageEntries,
+          },
+        });
+      } catch (logErr) {
+        console.error(
+          "[AI credit log] salvataggio log errore fallito",
+          logErr instanceof Error ? logErr.message : logErr
+        );
+      }
     }
 
     return Response.json({

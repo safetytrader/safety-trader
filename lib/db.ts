@@ -930,21 +930,65 @@ export async function getCantieri() {
   return data;
 }
 
-export async function createCantiereTest() {
+export async function getAiCreditSummary() {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(authError.message);
+  }
+
+  const user = authData?.user;
+
+  if (!user?.id) {
+    throw new Error("Utente non autenticato");
+  }
+
   const { data, error } = await supabase
-    .from("cantieri")
-    .insert({
-      nome: "Cantiere test da Next.js",
-      indirizzo: "Via di prova",
-      cse: "Test CSE",
-      data_inizio: new Date().toLocaleDateString("it-IT"),
-    })
-    .select()
-    .single();
+    .from("v_ai_credit_summary")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return data;
+  return (
+    data ?? {
+      user_id: user.id,
+      numero_chiamate: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+      costo_totale_eur: 0,
+      ultima_chiamata: null,
+    }
+  );
+}
+
+export async function getAiCreditLogs(limit = 100) {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(authError.message);
+  }
+
+  const user = authData?.user;
+
+  if (!user?.id) {
+    throw new Error("Utente non autenticato");
+  }
+
+  const { data, error } = await supabase
+    .from("ai_credit_logs")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
 }

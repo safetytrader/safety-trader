@@ -13,6 +13,10 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
     `${user?.nome?.[0] || ""}${user?.cognome?.[0] || ""}`.toUpperCase() ||
     "ST";
   const showLogout = Boolean(authUser && onLogout);
+  const isAdmin = user?.role === "admin";
+  const adminNavItems = isAdmin
+    ? [{ label: "Consumi AI", href: "/admin/ai-credit" }]
+    : [];
 
   return (
     <header className="app-header">
@@ -34,7 +38,20 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
         )}
 
         <div className="app-header-right">
-          {actions ? <div className="app-header-actions">{actions}</div> : null}
+          {adminNavItems.length || actions ? (
+            <div className="app-header-actions">
+              {adminNavItems.map(item => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="app-header-action-btn"
+                >
+                  {item.label}
+                </Link>
+              ))}
+              {actions}
+            </div>
+          ) : null}
           <Link href="/account" className="app-header-user" aria-label="Account">
             <div className="app-header-avatar">{initials}</div>
             <div className="app-header-user-meta">
@@ -217,6 +234,9 @@ export function AppHeader({ user, breadcrumb, actions, onLogout, authUser }) {
           font-weight: 800;
           cursor: pointer;
           white-space: nowrap;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
           transition: background 0.15s ease, border-color 0.15s ease;
         }
 
